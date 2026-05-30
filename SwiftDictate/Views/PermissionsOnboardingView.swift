@@ -6,7 +6,7 @@ struct PermissionsOnboardingView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            Image(systemName: "mic.badge.ellipsis")
+            Image(systemName: "microphone.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
 

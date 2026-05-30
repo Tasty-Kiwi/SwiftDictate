@@ -14,6 +14,8 @@ final class AppState {
     var showSettings = false
     var isProcessing = false
     var onboardingWindow: NSWindow?
+    var overlayWindow: NSWindow?
+    var recordingTriggeredByHotkey = false
 
     let permissionsService = PermissionsService()
     let audioCaptureService = AudioCaptureService()
@@ -31,6 +33,27 @@ final class AppState {
     private var workspaceObserver: (any NSObjectProtocol)?
     private var permissionPollTask: Task<Void, Never>?
     private var setupTask: Task<Void, Never>?
+    private var onboardingShown = false
+
+    init() {
+        Task { @MainActor in
+            await initialize()
+            hotkeyService.start()
+
+            if !hotkeyService.globalMonitorActive {
+                print("[SwiftDictate] Global monitor not active — re-requesting accessibility to refresh TCC entry")
+                permissionsService.requestAccessibility()
+                await permissionsService.pollAccessibilityUntilTrusted()
+                hotkeyService.stop()
+                hotkeyService.start()
+            }
+
+            if !hasRequiredPermissions, !onboardingShown {
+                onboardingShown = true
+                showOnboarding()
+            }
+        }
+    }
 
     deinit {
         MainActor.assumeIsolated {
@@ -49,6 +72,12 @@ final class AppState {
 
     func initialize() async {
         permissionsService.refreshAll()
+
+        if !permissionsService.accessibilityTrusted {
+            permissionsService.requestAccessibility()
+            await permissionsService.pollAccessibilityUntilTrusted()
+        }
+
         foundationModelsService.checkAvailability()
 
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -57,10 +86,17 @@ final class AppState {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.permissionsService.refreshAll()
-                if self?.hasRequiredPermissions == true,
-                   self?.recordingState == .requestingPermissions {
-                    self?.recordingState = .ready
+                guard let self else { return }
+                self.permissionsService.refreshAll()
+
+                if self.permissionsService.accessibilityTrusted, !self.hotkeyService.globalMonitorActive {
+                    self.hotkeyService.stop()
+                    self.hotkeyService.start()
+                }
+
+                if self.hasRequiredPermissions,
+                   self.recordingState == .requestingPermissions {
+                    self.recordingState = .ready
                 }
             }
         }
@@ -89,6 +125,11 @@ final class AppState {
                     Task { await self.setupSpeechEngine() }
                     self.permissionPollTask?.cancel()
                 }
+
+                if self.permissionsService.accessibilityTrusted, !self.hotkeyService.globalMonitorActive {
+                    self.hotkeyService.stop()
+                    self.hotkeyService.start()
+                }
             }
         }
     }
@@ -108,6 +149,9 @@ final class AppState {
     }
 
     private func handleHotkeyPress() async {
+        recordingTriggeredByHotkey = true
+        print("[SwiftDictate] handleHotkeyPress — mode: \(settings.recordingMode.displayName)")
+
         switch settings.recordingMode {
         case .pushToTalk:
             if canStartRecording {
@@ -120,6 +164,7 @@ final class AppState {
     }
 
     private func handleHotkeyRelease() async {
+        print("[SwiftDictate] handleHotkeyRelease — isRecording: \(isRecording)")
         if settings.recordingMode == .pushToTalk, isRecording {
             stopRecording()
         }
@@ -172,6 +217,10 @@ final class AppState {
         recordingState = .recording
         resetTranscript()
         errorMessage = nil
+
+        if recordingTriggeredByHotkey {
+            showOverlay()
+        }
 
         do {
             audioStream = try audioCaptureService.start()
@@ -235,6 +284,8 @@ final class AppState {
         guard isRecording else { return }
 
         recordingState = .processing
+        dismissOverlay()
+        recordingTriggeredByHotkey = false
 
         audioCaptureService.stop()
         audioStream = nil
@@ -316,6 +367,8 @@ final class AppState {
     func handleError(_ error: Error) {
         errorMessage = error.localizedDescription
         recordingState = .error(error)
+        dismissOverlay()
+        recordingTriggeredByHotkey = false
 
         if audioCaptureService.isRunning {
             audioCaptureService.stop()
@@ -332,10 +385,55 @@ final class AppState {
         await setupSpeechEngine()
     }
 
+    private func showOverlay() {
+        guard overlayWindow == nil else { return }
+
+        let overlay = RecordingOverlayView().environment(self)
+        let hostingVC = NSHostingController(rootView: overlay)
+        let window = NSWindow(contentViewController: hostingVC)
+        window.styleMask = [.borderless, .nonactivatingPanel]
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.level = .floating
+        window.hasShadow = false
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        overlayWindow = window
+    }
+
+    private func dismissOverlay() {
+        overlayWindow?.close()
+        overlayWindow = nil
+    }
+
     func cleanup() {
         stopRecording()
         hotkeyService.stop()
         speechEngineService.cancel()
         foundationModelsService.resetSession()
+    }
+
+    func showOnboarding() {
+        guard onboardingWindow == nil else { return }
+
+        let onboardingVC = NSHostingController(
+            rootView: PermissionsOnboardingView()
+                .environment(self)
+                .onChange(of: hasRequiredPermissions) { _, hasPermissions in
+                    if hasPermissions {
+                        self.onboardingWindow?.close()
+                        self.onboardingWindow = nil
+                    }
+                }
+        )
+
+        let window = NSWindow(contentViewController: onboardingVC)
+        window.title = "Welcome to SwiftDictate"
+        window.styleMask = [.titled, .closable, .miniaturizable]
+        window.setContentSize(NSSize(width: 440, height: 520))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        onboardingWindow = window
     }
 }

@@ -27,7 +27,7 @@ final class AppSettings {
     }
 
     var recordingMode: RecordingMode {
-        get { RecordingMode(rawValue: recordingModeRaw) ?? .pushToTalk }
+        get { RecordingMode(rawValue: recordingModeRaw) ?? .toggle }
         set { recordingModeRaw = newValue.rawValue }
     }
 
@@ -37,7 +37,7 @@ final class AppSettings {
 
     init() {
         self.recordingModeRaw = defaults.string(forKey: Keys.recordingMode)
-            ?? RecordingMode.pushToTalk.rawValue
+            ?? RecordingMode.toggle.rawValue
         self.enableFoundationModels = defaults.object(forKey: Keys.enableFoundationModels)
             as? Bool ?? true
         self.enablePunctuationRestoration = defaults.object(forKey: Keys.enablePunctuationRestoration)
@@ -56,7 +56,7 @@ final class AppSettings {
 
     private func registerDefaults() {
         let defaultValues: [String: Any] = [
-            Keys.recordingMode: RecordingMode.pushToTalk.rawValue,
+            Keys.recordingMode: RecordingMode.toggle.rawValue,
             Keys.enableFoundationModels: true,
             Keys.enablePunctuationRestoration: true,
             Keys.enableGrammarCorrection: true,

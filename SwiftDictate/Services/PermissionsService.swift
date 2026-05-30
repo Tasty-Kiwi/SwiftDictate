@@ -80,15 +80,11 @@ final class PermissionsService {
             &focused
         )
         if result == .success {
-            logger.info("AXIsProcessTrusted returned false but AX API call succeeded -- treating as trusted")
+            logger.warning("AXIsProcessTrusted=false but AX API succeeded — treating as trusted (TCC entry may be stale)")
             return true
         }
-        if result == .apiDisabled {
-            logger.info("AX API returned apiDisabled -- accessibility access is blocked")
-            return false
-        }
 
-        logger.info("AX API returned error: \(result.rawValue)")
+        logger.info("Accessibility not granted — AXIsProcessTrusted=false, AX API result=\(result.rawValue)")
         return false
     }
 

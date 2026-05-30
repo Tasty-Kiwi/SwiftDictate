@@ -114,7 +114,7 @@ struct SettingsView: View {
 
     private var aboutTab: some View {
         VStack(spacing: 16) {
-            Image(systemName: "mic.badge.ellipsis")
+            Image(systemName: "microphone.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.tint)
 
