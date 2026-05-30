@@ -51,9 +51,8 @@ struct PermissionsOnboardingView: View {
                     Task {
                         await appState.setupSpeechEngine()
                         appState.recordingState = appState.speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
-                        if let window = NSApplication.shared.windows.first(where: { $0.title.contains("Welcome") }) {
-                            window.close()
-                        }
+                        appState.onboardingWindow?.close()
+                        appState.onboardingWindow = nil
                     }
                 }
                 .buttonStyle(.bordered)

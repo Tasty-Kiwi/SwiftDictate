@@ -13,6 +13,7 @@ final class AppState {
     var isRestoringState = false
     var showSettings = false
     var isProcessing = false
+    var onboardingWindow: NSWindow?
 
     let permissionsService = PermissionsService()
     let audioCaptureService = AudioCaptureService()

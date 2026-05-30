@@ -35,11 +35,8 @@ struct SwiftDictateApp: App {
                 .environment(appState)
                 .onChange(of: appState.hasRequiredPermissions) { _, hasPermissions in
                     if hasPermissions {
-                        if let window = NSApplication.shared.windows.first(where: {
-                            $0.title.contains("Welcome")
-                        }) {
-                            window.close()
-                        }
+                        appState.onboardingWindow?.close()
+                        appState.onboardingWindow = nil
                     }
                 }
         )
@@ -49,8 +46,8 @@ struct SwiftDictateApp: App {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(NSSize(width: 440, height: 520))
         window.center()
-        window.isReleasedWhenClosed = true
         window.makeKeyAndOrderFront(nil)
+        appState.onboardingWindow = window
     }
 }
 
