@@ -51,7 +51,8 @@ final class PermissionsService {
 
     func refreshAll() {
         microphoneAuthorized = checkMicrophone()
-        accessibilityTrusted = checkAccessibilityTrust()
+        let refreshedAccessibilityTrust = checkAccessibilityTrust()
+        accessibilityTrusted = refreshedAccessibilityTrust || accessibilityTrusted
         speechRecognitionAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
 
         logger.info("Permissions refreshed — mic:\(self.microphoneAuthorized) ax:\(self.accessibilityTrusted) speech:\(self.speechRecognitionAuthorized)")
@@ -98,12 +99,12 @@ final class PermissionsService {
 
         UserDefaults.standard.set(true, forKey: "AXPrompted")
 
-        accessibilityTrusted = checkAccessibilityTrust()
+        accessibilityTrusted = checkAccessibilityTrust() || accessibilityTrusted
     }
 
     func pollAccessibilityUntilTrusted() async {
         for attempt in 1...15 {
-            accessibilityTrusted = checkAccessibilityTrust()
+            accessibilityTrusted = checkAccessibilityTrust() || accessibilityTrusted
             if accessibilityTrusted {
                 logger.info("Accessibility granted after \(attempt) poll(s)")
                 return

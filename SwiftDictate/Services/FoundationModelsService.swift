@@ -50,6 +50,7 @@ final class FoundationModelsService {
     }
 
     func restorePunctuation(_ text: String) async throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         guard isAvailable else { throw FoundationModelsError.unavailable }
 
         #if canImport(FoundationModels)
@@ -97,6 +98,7 @@ final class FoundationModelsService {
     }
 
     func correctGrammar(_ text: String) async throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         guard isAvailable else { throw FoundationModelsError.unavailable }
 
         #if canImport(FoundationModels)
@@ -121,6 +123,7 @@ final class FoundationModelsService {
     }
 
     func cleanupTranscript(_ text: String) async throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         guard isAvailable else {
             logger.warning("cleanupTranscript skipped — FM unavailable")
             throw FoundationModelsError.unavailable
@@ -182,6 +185,7 @@ final class FoundationModelsService {
     }
 
     func invokeCustomPrompt(_ prompt: String, on text: String) async throws -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
         guard isAvailable else { throw FoundationModelsError.unavailable }
 
         #if canImport(FoundationModels)

@@ -11,6 +11,7 @@ final class HotkeyService {
     var onHotkeyPressed: (() -> Void)?
     var onHotkeyReleased: (() -> Void)?
     var configuration: HotkeyConfiguration = .default
+    private(set) var isHotkeyPressed = false
 
     private let logger = Logger(
         subsystem: "net.tastykiwi.SwiftDictate",
@@ -61,6 +62,7 @@ final class HotkeyService {
         localMonitor = nil
         globalMonitorActive = false
         isPressed = false
+        isHotkeyPressed = false
 
         logger.info("Hotkey monitoring stopped")
     }
@@ -88,6 +90,7 @@ final class HotkeyService {
         case .keyDown:
             if !isPressed {
                 isPressed = true
+                isHotkeyPressed = true
                 lastPressTime = Date()
                 print("[SwiftDictate] Hotkey pressed: \(self.configuration.displayName)")
                 onHotkeyPressed?()
@@ -96,6 +99,7 @@ final class HotkeyService {
         case .keyUp:
             if isPressed {
                 isPressed = false
+                isHotkeyPressed = false
                 print("[SwiftDictate] Hotkey released: \(self.configuration.displayName)")
                 onHotkeyReleased?()
             }
@@ -106,11 +110,13 @@ final class HotkeyService {
 
             if flagPresent && !isPressed {
                 isPressed = true
+                isHotkeyPressed = true
                 lastPressTime = Date()
                 print("[SwiftDictate] Hotkey pressed: \(self.configuration.displayName)")
                 onHotkeyPressed?()
             } else if !flagPresent && isPressed {
                 isPressed = false
+                isHotkeyPressed = false
                 print("[SwiftDictate] Hotkey released: \(self.configuration.displayName)")
                 onHotkeyReleased?()
             }

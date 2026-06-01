@@ -37,8 +37,8 @@ struct TextInsertionServiceTests {
         pasteboard.clearContents()
     }
 
-    @Test func pasteFromClipboardPostsCGEvent() {
+    @Test func pasteFromClipboardPostsCGEvent() async throws {
         let service = TextInsertionService()
-        service.pasteFromClipboard()
+        try await service.pasteFromClipboard()
     }
 }

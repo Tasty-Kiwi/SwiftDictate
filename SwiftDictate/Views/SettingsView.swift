@@ -107,6 +107,8 @@ struct SettingsView: View {
 
             Section("Text Insertion") {
                 Toggle("Auto-insert text into focused app", isOn: autoInsertBinding)
+                Toggle("Clear clipboard after paste", isOn: clearClipboardAfterPasteBinding)
+                    .disabled(!appState.settings.autoInsertText)
             }
         }
         .formStyle(.grouped)
@@ -186,6 +188,13 @@ struct SettingsView: View {
         Binding(
             get: { appState.settings.autoInsertText },
             set: { appState.settings.autoInsertText = $0 }
+        )
+    }
+
+    private var clearClipboardAfterPasteBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.clearClipboardAfterPaste },
+            set: { appState.settings.clearClipboardAfterPaste = $0 }
         )
     }
 

@@ -19,6 +19,9 @@ final class AppSettings {
     var autoInsertText: Bool {
         didSet { defaults.set(autoInsertText, forKey: Keys.autoInsertText) }
     }
+    var clearClipboardAfterPaste: Bool {
+        didSet { defaults.set(clearClipboardAfterPaste, forKey: Keys.clearClipboardAfterPaste) }
+    }
     var enableSmartCleanup: Bool {
         didSet { defaults.set(enableSmartCleanup, forKey: Keys.enableSmartCleanup) }
     }
@@ -46,6 +49,8 @@ final class AppSettings {
             as? Bool ?? true
         self.autoInsertText = defaults.object(forKey: Keys.autoInsertText)
             as? Bool ?? true
+        self.clearClipboardAfterPaste = defaults.object(forKey: Keys.clearClipboardAfterPaste)
+            as? Bool ?? true
         self.enableSmartCleanup = defaults.object(forKey: Keys.enableSmartCleanup)
             as? Bool ?? true
         self.preferredLocaleIdentifier = defaults.string(forKey: Keys.preferredLocaleIdentifier)
@@ -62,6 +67,7 @@ final class AppSettings {
             Keys.enableGrammarCorrection: true,
             Keys.enableSmartCleanup: true,
             Keys.autoInsertText: true,
+            Keys.clearClipboardAfterPaste: true,
             Keys.preferredLocaleIdentifier: Locale.current.identifier(.bcp47),
         ]
         defaults.register(defaults: defaultValues)
@@ -74,6 +80,7 @@ final class AppSettings {
         static let enableGrammarCorrection = "enableGrammarCorrection"
         static let enableSmartCleanup = "enableSmartCleanup"
         static let autoInsertText = "autoInsertText"
+        static let clearClipboardAfterPaste = "clearClipboardAfterPaste"
         static let preferredLocaleIdentifier = "preferredLocaleIdentifier"
     }
 

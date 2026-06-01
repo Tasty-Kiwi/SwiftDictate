@@ -169,6 +169,10 @@ final class SpeechEngineService: @unchecked Sendable {
 
         recognizerTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                self.isRunning = false
+                self.resultContinuation?.finish()
+            }
 
             do {
                 for try await result in transcriber.results {

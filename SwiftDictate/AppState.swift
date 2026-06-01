@@ -2,6 +2,11 @@ import SwiftUI
 import AVFoundation
 import Observation
 
+private final class RecordingOverlayPanel: NSPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -34,6 +39,7 @@ final class AppState {
     private var permissionPollTask: Task<Void, Never>?
     private var setupTask: Task<Void, Never>?
     private var onboardingShown = false
+    private var insertionTargetApplication: NSRunningApplication?
 
     init() {
         Task { @MainActor in
@@ -217,6 +223,7 @@ final class AppState {
         recordingState = .recording
         resetTranscript()
         errorMessage = nil
+        insertionTargetApplication = NSWorkspace.shared.frontmostApplication
 
         if recordingTriggeredByHotkey {
             showOverlay()
@@ -263,15 +270,6 @@ final class AppState {
                     if result.isFinal {
                         self.finalizedTranscript += result.text
                         self.volatileTranscript = ""
-
-                        if self.settings.autoInsertText {
-                            Task {
-                                try? await self.textInsertionService.insertText(
-                                    result.text,
-                                    autoInsert: self.settings.autoInsertText
-                                )
-                            }
-                        }
                     } else {
                         self.volatileTranscript = result.text
                     }
@@ -300,19 +298,77 @@ final class AppState {
                 try await speechEngineService.finalizeResults()
             } catch {
                 handleError(error)
+                return
+            }
+
+            await waitForResultCollectionToFinish()
+
+            guard !finalizedTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                print("[SwiftDictate] Skipping processing/insertion because transcription returned empty text")
+                speechEngineService.resetForNewSession()
+                resultCollectionTask = nil
+                insertionTargetApplication = nil
+                await setupSpeechEngine()
+                recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+                return
+            }
+
+            let transcriptForInsertion = await processTranscriptIfNeeded(finalizedTranscript)
+
+            if settings.autoInsertText, !transcriptForInsertion.isEmpty {
+                do {
+                    await waitForHotkeyRelease()
+
+                    if let target = insertionTargetApplication,
+                       target.bundleIdentifier != Bundle.main.bundleIdentifier,
+                       !target.isTerminated {
+                        NSApp.yieldActivation(to: target)
+                        target.activate(options: [])
+                        try await Task.sleep(for: .milliseconds(75))
+                    }
+
+                    try await textInsertionService.insertText(
+                        transcriptForInsertion,
+                        autoInsert: settings.autoInsertText,
+                        clearClipboardAfterPaste: settings.clearClipboardAfterPaste
+                    )
+                } catch {
+                    handleError(error)
+                    return
+                }
             }
 
             speechEngineService.resetForNewSession()
             resultCollectionTask?.cancel()
             resultCollectionTask = nil
+            insertionTargetApplication = nil
 
             await setupSpeechEngine()
 
             recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
         }
+    }
 
-        if settings.enableFoundationModels, !finalizedTranscript.isEmpty {
-            processTranscript(finalizedTranscript)
+    private func waitForHotkeyRelease() async {
+        let deadline = Date().addingTimeInterval(1)
+        while hotkeyService.isHotkeyPressed, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+    }
+
+    private func waitForResultCollectionToFinish() async {
+        guard let resultCollectionTask else { return }
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await resultCollectionTask.value
+            }
+            group.addTask {
+                try? await Task.sleep(for: .milliseconds(1500))
+            }
+
+            await group.next()
+            group.cancelAll()
         }
     }
 
@@ -325,36 +381,47 @@ final class AppState {
     }
 
     func processTranscript(_ text: String) {
-        guard settings.enableFoundationModels, foundationModelsService.isAvailable else {
-            print("[SwiftDictate] FM processing skipped — enabled:\(settings.enableFoundationModels) available:\(foundationModelsService.isAvailable)")
-            return
+        Task {
+            _ = await processTranscriptIfNeeded(text)
+        }
+    }
+
+    private func processTranscriptIfNeeded(_ text: String) async -> String {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("[SwiftDictate] FM processing skipped — empty transcript")
+            return text
         }
 
-        Task {
-            do {
-                var processed = text
+        guard settings.enableFoundationModels, foundationModelsService.isAvailable else {
+            print("[SwiftDictate] FM processing skipped — enabled:\(settings.enableFoundationModels) available:\(foundationModelsService.isAvailable)")
+            return text
+        }
 
-                if settings.enableSmartCleanup {
-                    print("[SwiftDictate] FM: starting smart cleanup...")
-                    processed = try await foundationModelsService.cleanupTranscript(processed)
-                    print("[SwiftDictate] FM: cleanup complete — \(processed.count) chars")
-                }
+        do {
+            var processed = text
 
-                if settings.enablePunctuationRestoration {
-                    print("[SwiftDictate] FM: starting punctuation restoration...")
-                    processed = try await foundationModelsService.restorePunctuation(processed)
-                }
-
-                if settings.enableGrammarCorrection {
-                    print("[SwiftDictate] FM: starting grammar correction...")
-                    processed = try await foundationModelsService.correctGrammar(processed)
-                }
-
-                finalizedTranscript = processed
-                print("[SwiftDictate] FM: all processing complete — final: \"\(processed)\"")
-            } catch {
-                print("[SwiftDictate] FM processing failed: \(error.localizedDescription)")
+            if settings.enableSmartCleanup {
+                print("[SwiftDictate] FM: starting smart cleanup...")
+                processed = try await foundationModelsService.cleanupTranscript(processed)
+                print("[SwiftDictate] FM: cleanup complete — \(processed.count) chars")
             }
+
+            if settings.enablePunctuationRestoration {
+                print("[SwiftDictate] FM: starting punctuation restoration...")
+                processed = try await foundationModelsService.restorePunctuation(processed)
+            }
+
+            if settings.enableGrammarCorrection {
+                print("[SwiftDictate] FM: starting grammar correction...")
+                processed = try await foundationModelsService.correctGrammar(processed)
+            }
+
+            finalizedTranscript = processed
+            print("[SwiftDictate] FM: all processing complete — final: \"\(processed)\"")
+            return processed
+        } catch {
+            print("[SwiftDictate] FM processing failed: \(error.localizedDescription)")
+            return text
         }
     }
 
@@ -390,15 +457,23 @@ final class AppState {
 
         let overlay = RecordingOverlayView().environment(self)
         let hostingVC = NSHostingController(rootView: overlay)
-        let window = NSWindow(contentViewController: hostingVC)
-        window.styleMask = [.borderless, .nonactivatingPanel]
+        let window = RecordingOverlayPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = hostingVC
+        window.isFloatingPanel = true
+        window.hidesOnDeactivate = false
+        window.isReleasedWhenClosed = false
         window.isOpaque = false
         window.backgroundColor = .clear
-        window.level = .floating
+        window.level = .statusBar
         window.hasShadow = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         window.center()
-        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         overlayWindow = window
     }
 

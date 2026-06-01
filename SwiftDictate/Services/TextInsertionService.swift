@@ -9,6 +9,10 @@ enum TextInsertionError: Error {
 }
 
 final class TextInsertionService {
+    private struct PasteboardSnapshot {
+        let items: [[NSPasteboard.PasteboardType: Data]]
+    }
+
     private let logger = Logger(
         subsystem: "net.tastykiwi.SwiftDictate",
         category: "TextInsertionService"
@@ -16,14 +20,21 @@ final class TextInsertionService {
 
     var autoInsert: Bool = true
 
-    func insertText(_ text: String, autoInsert: Bool = true) async throws {
+    func insertText(
+        _ text: String,
+        autoInsert: Bool = true,
+        clearClipboardAfterPaste: Bool = true
+    ) async throws {
         guard !text.isEmpty else { return }
 
         if autoInsert {
             let focusedApp = getFocusedApp()
             if focusedApp != nil {
-                try await typeTextViaCGEvent(text)
-                logger.debug("Text inserted via CGEvent into focused app")
+                try await pasteTextViaClipboard(
+                    text,
+                    clearClipboardAfterPaste: clearClipboardAfterPaste
+                )
+                logger.debug("Text inserted via clipboard paste into focused app")
                 return
             }
         }
@@ -36,43 +47,47 @@ final class TextInsertionService {
         NSWorkspace.shared.runningApplications.first { $0.isActive }
     }
 
-    private func typeTextViaCGEvent(_ text: String) async throws {
-        guard let eventSource = CGEventSource(stateID: .combinedSessionState) else {
-            throw TextInsertionError.insertionFailed
+    private func pasteTextViaClipboard(
+        _ text: String,
+        clearClipboardAfterPaste: Bool
+    ) async throws {
+        let snapshot = capturePasteboard()
+
+        try await copyToClipboard(text)
+        try await Task.sleep(for: .milliseconds(50))
+        try await pasteFromClipboard()
+        try await Task.sleep(for: .milliseconds(500))
+
+        if clearClipboardAfterPaste {
+            restorePasteboard(snapshot)
+        }
+    }
+
+    private func capturePasteboard() -> PasteboardSnapshot {
+        let pasteboard = NSPasteboard.general
+        let items = pasteboard.pasteboardItems?.map { item in
+            item.types.reduce(into: [NSPasteboard.PasteboardType: Data]()) { result, type in
+                result[type] = item.data(forType: type)
+            }
+        } ?? []
+
+        return PasteboardSnapshot(items: items)
+    }
+
+    private func restorePasteboard(_ snapshot: PasteboardSnapshot) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        let restoredItems = snapshot.items.map { itemData in
+            let item = NSPasteboardItem()
+            for (type, data) in itemData {
+                item.setData(data, forType: type)
+            }
+            return item
         }
 
-        for character in text {
-            let charString = String(character)
-            let utf16Chars = Array(charString.utf16)
-            guard !utf16Chars.isEmpty else { continue }
-
-            guard let keyDownEvent = CGEvent(
-                keyboardEventSource: eventSource,
-                virtualKey: 0,
-                keyDown: true
-            ) else {
-                throw TextInsertionError.insertionFailed
-            }
-
-            keyDownEvent.keyboardSetUnicodeString(
-                stringLength: utf16Chars.count,
-                unicodeString: utf16Chars
-            )
-            keyDownEvent.post(tap: .cghidEventTap)
-
-            try await Task.sleep(for: .milliseconds(1))
-
-            guard let keyUpEvent = CGEvent(
-                keyboardEventSource: eventSource,
-                virtualKey: 0,
-                keyDown: false
-            ) else {
-                throw TextInsertionError.insertionFailed
-            }
-
-            keyUpEvent.post(tap: .cghidEventTap)
-
-            try await Task.sleep(for: .milliseconds(1))
+        if !restoredItems.isEmpty {
+            pasteboard.writeObjects(restoredItems)
         }
     }
 
@@ -85,17 +100,26 @@ final class TextInsertionService {
         }
     }
 
-    func pasteFromClipboard() {
-        let source = CGEventSource(stateID: .combinedSessionState)
+    func pasteFromClipboard() async throws {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let commandDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true),
+              let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
+              let commandUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else {
+            throw TextInsertionError.insertionFailed
+        }
 
-        let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true)
-        cmdDown?.flags = .maskCommand
-        cmdDown?.post(tap: .cghidEventTap)
+        commandDown.flags = .maskCommand
+        vDown.flags = .maskCommand
+        vUp.flags = .maskCommand
+        commandUp.flags = []
 
-        usleep(10_000)
-
-        let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-        cmdUp?.flags = .maskCommand
-        cmdUp?.post(tap: .cghidEventTap)
+        commandDown.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        vDown.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        vUp.post(tap: .cghidEventTap)
+        try await Task.sleep(for: .milliseconds(10))
+        commandUp.post(tap: .cghidEventTap)
     }
 }
