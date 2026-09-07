@@ -18,19 +18,12 @@ struct PermissionsOnboardingView: View {
                 .foregroundStyle(.secondary)
 
             VStack(alignment: .leading, spacing: 16) {
-                permissionRow(
-                    name: "Microphone",
-                    icon: "mic.fill",
-                    granted: appState.permissionsService.microphoneAuthorized,
-                    description: "To capture your voice for transcription."
-                )
-
-                permissionRow(
-                    name: "Accessibility",
-                    icon: "accessibility",
-                    granted: appState.permissionsService.accessibilityTrusted,
-                    description: "To insert transcribed text into other apps."
-                )
+                ForEach(Permission.allCases, id: \.self) { permission in
+                    permissionRow(
+                        permission: permission,
+                        granted: appState.permissionsService.isGranted(permission)
+                    )
+                }
             }
             .padding()
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
@@ -40,41 +33,26 @@ struct PermissionsOnboardingView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else {
-                    Text("Grant Permissions")
+                    Text("Grant Required Permissions")
                 }
             }
             .buttonStyle(.borderedProminent)
             .disabled(requestingPermission)
-
-            if appState.hasRequiredPermissions {
-                Button("Start Using SwiftDictate") {
-                    Task {
-                        await appState.setupSpeechEngine()
-                        appState.recordingState = appState.speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
-                        appState.onboardingWindow?.close()
-                        appState.onboardingWindow = nil
-                    }
-                }
-                .buttonStyle(.bordered)
-            }
         }
         .padding(40)
         .frame(width: 440)
-        .onAppear {
-            appState.permissionsService.refreshAll()
-        }
     }
 
-    private func permissionRow(name: String, icon: String, granted: Bool, description: String) -> some View {
+    private func permissionRow(permission: Permission, granted: Bool) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: granted ? "checkmark.circle.fill" : "circle")
                 .foregroundStyle(granted ? .green : .secondary)
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(name)
+                Text(permission.displayName)
                     .font(.headline)
-                Text(description)
+                Text(permission.description)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -84,23 +62,8 @@ struct PermissionsOnboardingView: View {
     private func requestPermissions() {
         requestingPermission = true
         Task {
-            let micGranted = await appState.permissionsService.requestMicrophone()
-
-            if !appState.permissionsService.accessibilityTrusted {
-                appState.permissionsService.requestAccessibility()
-                await appState.permissionsService.pollAccessibilityUntilTrusted()
-            }
-
-            if micGranted {
-                _ = await appState.permissionsService.requestSpeechRecognition()
-            }
-
-            appState.permissionsService.refreshAll()
+            await appState.requestRequiredPermissions()
             requestingPermission = false
-
-            if appState.hasRequiredPermissions {
-                appState.recordingState = .ready
-            }
         }
     }
 }

@@ -37,20 +37,25 @@ struct SettingsView: View {
                     Text(appState.hotkeyService.configuration.displayName)
                         .foregroundStyle(.secondary)
                 }
-
-                Text("Custom hotkey configuration will be available in a future update.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Section("Permissions") {
                 permissionRow("Microphone", granted: appState.permissionsService.microphoneAuthorized) {
-                    Task { _ = await appState.permissionsService.requestMicrophone() }
-                    appState.permissionsService.refreshAll()
+                    Task {
+                        _ = await appState.permissionsService.requestMicrophone()
+                        await appState.refreshPermissionsAndUpdateState()
+                    }
                 }
 
                 permissionRow("Accessibility", granted: appState.permissionsService.accessibilityTrusted) {
                     appState.permissionsService.openAccessibilitySettings()
+                }
+
+                permissionRow("Speech Recognition", granted: appState.permissionsService.speechRecognitionAuthorized) {
+                    Task {
+                        _ = await appState.permissionsService.requestSpeechRecognition()
+                        await appState.refreshPermissionsAndUpdateState()
+                    }
                 }
             }
         }
@@ -107,7 +112,7 @@ struct SettingsView: View {
 
             Section("Text Insertion") {
                 Toggle("Auto-insert text into focused app", isOn: autoInsertBinding)
-                Toggle("Clear clipboard after paste", isOn: clearClipboardAfterPasteBinding)
+                Toggle("Restore previous clipboard after paste", isOn: restoreClipboardAfterPasteBinding)
                     .disabled(!appState.settings.autoInsertText)
             }
         }
@@ -191,10 +196,10 @@ struct SettingsView: View {
         )
     }
 
-    private var clearClipboardAfterPasteBinding: Binding<Bool> {
+    private var restoreClipboardAfterPasteBinding: Binding<Bool> {
         Binding(
-            get: { appState.settings.clearClipboardAfterPaste },
-            set: { appState.settings.clearClipboardAfterPaste = $0 }
+            get: { appState.settings.restoreClipboardAfterPaste },
+            set: { appState.settings.restoreClipboardAfterPaste = $0 }
         )
     }
 

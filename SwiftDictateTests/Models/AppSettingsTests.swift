@@ -3,91 +3,47 @@ import Foundation
 @testable import SwiftDictate
 
 struct AppSettingsTests {
-
-    @Test func defaultRecordingModeIsPushToTalk() {
-        let settings = AppSettings()
-        #expect(settings.recordingMode == .pushToTalk)
+    private func makeDefaults() -> UserDefaults {
+        let suiteName = "AppSettingsTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        return defaults
     }
 
-    @Test func defaultEnableFoundationModelsIsTrue() {
-        let settings = AppSettings()
-        #expect(settings.enableFoundationModels)
-    }
+    @Test func defaultsAreAppliedToAnEmptyStore() {
+        let settings = AppSettings(defaults: makeDefaults(), locale: Locale(identifier: "en-GB"))
 
-    @Test func defaultAutoInsertTextIsTrue() {
-        let settings = AppSettings()
-        #expect(settings.autoInsertText)
-    }
-
-    @Test func defaultEnablePunctuationRestorationIsTrue() {
-        let settings = AppSettings()
-        #expect(settings.enablePunctuationRestoration)
-    }
-
-    @Test func defaultEnableGrammarCorrectionIsTrue() {
-        let settings = AppSettings()
-        #expect(settings.enableGrammarCorrection)
-    }
-
-    @Test func settingRecordingModePersists() {
-        let settings = AppSettings()
-
-        settings.recordingMode = .toggle
         #expect(settings.recordingMode == .toggle)
-        #expect(settings.recordingModeRaw == AppSettings.RecordingMode.toggle.rawValue)
+        #expect(settings.enableFoundationModels)
+        #expect(settings.enablePunctuationRestoration)
+        #expect(settings.enableGrammarCorrection)
+        #expect(settings.enableSmartCleanup)
+        #expect(settings.autoInsertText)
+        #expect(settings.restoreClipboardAfterPaste)
+        #expect(settings.preferredLocale.identifier(.bcp47) == "en-GB")
+    }
+
+    @Test func recordingModeAndOptionsPersistInTheInjectedStore() {
+        let defaults = makeDefaults()
+        let settings = AppSettings(defaults: defaults)
 
         settings.recordingMode = .pushToTalk
-        #expect(settings.recordingMode == .pushToTalk)
-    }
-
-    @Test func toggleSettingsPersist() {
-        let settings = AppSettings()
-
         settings.enableFoundationModels = false
-        #expect(!settings.enableFoundationModels)
-
-        settings.enableFoundationModels = true
-        #expect(settings.enableFoundationModels)
-
         settings.autoInsertText = false
-        #expect(!settings.autoInsertText)
+        settings.preferredLocaleIdentifier = "lt-LT"
 
-        settings.autoInsertText = true
-        #expect(settings.autoInsertText)
+        let reloaded = AppSettings(defaults: defaults)
+        #expect(reloaded.recordingMode == .pushToTalk)
+        #expect(!reloaded.enableFoundationModels)
+        #expect(!reloaded.autoInsertText)
+        #expect(reloaded.preferredLocale.identifier(.bcp47) == "lt-LT")
     }
 
-    @Test func preferredLocaleHasValidIdentifier() {
-        let settings = AppSettings()
-        let locale = settings.preferredLocale
-        #expect(!locale.identifier(.bcp47).isEmpty)
-    }
+    @Test func invalidPersistedRecordingModeFallsBackToToggle() {
+        let defaults = makeDefaults()
+        defaults.set("unknown", forKey: "recordingMode")
 
-    @Test func recordingModesHaveDisplayNames() {
-        for mode in AppSettings.RecordingMode.allCases {
-            #expect(!mode.displayName.isEmpty)
-            #expect(!mode.description.isEmpty)
-        }
-    }
-
-    @Test func recordingModesAllCases() {
-        let allModes = AppSettings.RecordingMode.allCases
-        #expect(allModes.count == 2)
-        #expect(allModes.contains(.pushToTalk))
-        #expect(allModes.contains(.toggle))
-    }
-
-    @Test func userDefaultsPersistenceRoundtrip() {
-        let defaults = UserDefaults.standard
-
-        let settingsA = AppSettings()
-        settingsA.enableFoundationModels = false
-        settingsA.autoInsertText = false
-
-        let settingsB = AppSettings()
-        #expect(settingsB.enableFoundationModels == false)
-        #expect(settingsB.autoInsertText == false)
-
-        defaults.removeObject(forKey: "enableFoundationModels")
-        defaults.removeObject(forKey: "autoInsertText")
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.recordingMode == .toggle)
     }
 }

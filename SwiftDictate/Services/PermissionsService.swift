@@ -39,20 +39,28 @@ final class PermissionsService {
     )
 
     var allGranted: Bool {
-        microphoneAuthorized && accessibilityTrusted
+        missingPermissions.isEmpty
     }
 
     var missingPermissions: [Permission] {
         var result: [Permission] = []
         if !microphoneAuthorized { result.append(.microphone) }
         if !accessibilityTrusted { result.append(.accessibility) }
+        if !speechRecognitionAuthorized { result.append(.speechRecognition) }
         return result
+    }
+
+    func isGranted(_ permission: Permission) -> Bool {
+        switch permission {
+        case .microphone: microphoneAuthorized
+        case .accessibility: accessibilityTrusted
+        case .speechRecognition: speechRecognitionAuthorized
+        }
     }
 
     func refreshAll() {
         microphoneAuthorized = checkMicrophone()
-        let refreshedAccessibilityTrust = checkAccessibilityTrust()
-        accessibilityTrusted = refreshedAccessibilityTrust || accessibilityTrusted
+        accessibilityTrusted = checkAccessibilityTrust()
         speechRecognitionAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
 
         logger.info("Permissions refreshed — mic:\(self.microphoneAuthorized) ax:\(self.accessibilityTrusted) speech:\(self.speechRecognitionAuthorized)")
@@ -68,67 +76,25 @@ final class PermissionsService {
         return granted
     }
 
-    func checkAccessibilityTrust() -> Bool {
-        if AXIsProcessTrusted() {
-            return true
-        }
-
-        let systemWide = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            systemWide,
-            kAXFocusedApplicationAttribute as CFString,
-            &focused
-        )
-        if result == .success {
-            logger.warning("AXIsProcessTrusted=false but AX API succeeded — treating as trusted (TCC entry may be stale)")
-            return true
-        }
-
-        logger.info("Accessibility not granted — AXIsProcessTrusted=false, AX API result=\(result.rawValue)")
-        return false
+    private func checkAccessibilityTrust() -> Bool {
+        AXIsProcessTrusted()
     }
 
-    func requestAccessibility() {
+    private func requestAccessibility() {
         logger.info("Prompting user for accessibility permission")
 
-        let promptKey = kAXTrustedCheckOptionPrompt.takeRetainedValue() as NSString
-        let options = [promptKey: true] as CFDictionary
+        // Avoid `kAXTrustedCheckOptionPrompt`: Swift 6 imports that C global as
+        // mutable shared state. This is the documented value of that key.
+        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
 
         AXIsProcessTrustedWithOptions(options)
 
-        UserDefaults.standard.set(true, forKey: "AXPrompted")
-
-        accessibilityTrusted = checkAccessibilityTrust() || accessibilityTrusted
-    }
-
-    func pollAccessibilityUntilTrusted() async {
-        for attempt in 1...15 {
-            accessibilityTrusted = checkAccessibilityTrust() || accessibilityTrusted
-            if accessibilityTrusted {
-                logger.info("Accessibility granted after \(attempt) poll(s)")
-                return
-            }
-
-            logger.debug("Poll attempt \(attempt): accessibility not yet trusted")
-
-            do {
-                try await Task.sleep(for: .seconds(1))
-            } catch {
-                break
-            }
-        }
-
-        logger.warning("Accessibility polling exhausted after 15s, still not trusted")
+        accessibilityTrusted = checkAccessibilityTrust()
     }
 
     func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
         NSWorkspace.shared.open(url)
-
-        Task {
-            await pollAccessibilityUntilTrusted()
-        }
     }
 
     func requestSpeechRecognition() async -> Bool {
@@ -139,5 +105,24 @@ final class PermissionsService {
                 continuation.resume(returning: authorized)
             }
         }
+    }
+
+    /// Requests every permission needed to capture, transcribe, and insert dictation.
+    /// Accessibility is intentionally not polled here: the user grants it in System Settings
+    /// and `refreshAll()` observes the result when they return to the app.
+    func requestRequiredPermissions() async {
+        refreshAll()
+
+        if !microphoneAuthorized {
+            _ = await requestMicrophone()
+        }
+        if !speechRecognitionAuthorized {
+            _ = await requestSpeechRecognition()
+        }
+        if !accessibilityTrusted {
+            requestAccessibility()
+        }
+
+        refreshAll()
     }
 }

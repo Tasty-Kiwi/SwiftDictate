@@ -4,18 +4,11 @@ import CoreGraphics
 struct HotkeyConfiguration: Sendable {
     var keyCode: UInt16
     var modifiers: NSEvent.ModifierFlags
-    var requiresAccessibility: Bool { true }
 
     static let `default` = HotkeyConfiguration(
         keyCode: 61,
         modifiers: []
     )
-
-    static let presetOptions: [(String, HotkeyConfiguration)] = [
-        ("Right Option", HotkeyConfiguration(keyCode: 61, modifiers: [])),
-        ("Right Command", HotkeyConfiguration(keyCode: 54, modifiers: [])),
-        ("F5 (No Modifiers)", HotkeyConfiguration(keyCode: 96, modifiers: [])),
-    ]
 
     var displayName: String {
         let keyName = keyCodeDisplayName(keyCode)

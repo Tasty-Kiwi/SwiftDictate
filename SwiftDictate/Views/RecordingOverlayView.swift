@@ -17,9 +17,12 @@ struct RecordingOverlayView: View {
 
                 Spacer()
 
-                Text(formatDuration(appState.finalizedTranscript.count + appState.volatileTranscript.count))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(formatDuration(at: context.date))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
 
                 Button(action: { appState.stopRecording() }) {
                     Image(systemName: "stop.fill")
@@ -71,9 +74,10 @@ struct RecordingOverlayView: View {
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)
     }
 
-    private func formatDuration(_ charCount: Int) -> String {
-        let minutes = charCount / 900
-        let seconds = (charCount % 900) / 15
+    private func formatDuration(at date: Date) -> String {
+        let elapsed = max(0, date.timeIntervalSince(appState.recordingStartedAt ?? date))
+        let minutes = Int(elapsed) / 60
+        let seconds = Int(elapsed) % 60
         return String(format: "%d:%02d", minutes, seconds)
     }
 }

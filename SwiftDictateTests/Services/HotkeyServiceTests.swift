@@ -1,71 +1,68 @@
+import AppKit
 import Testing
 @testable import SwiftDictate
 
 struct HotkeyServiceTests {
 
-    @Test func startsInNotMonitoringState() async {
+    @Test func matchingKeyDownAndUpTriggerOnePressAndRelease() {
         let service = HotkeyService()
-        #expect(!service.isMonitoring)
+        var pressCount = 0
+        var releaseCount = 0
+        service.onHotkeyPressed = { pressCount += 1 }
+        service.onHotkeyReleased = { releaseCount += 1 }
+
+        service.process(event(.keyDown, keyCode: 61))
+        service.process(event(.keyDown, keyCode: 61))
+        service.process(event(.keyUp, keyCode: 61))
+        service.process(event(.keyUp, keyCode: 61))
+
+        #expect(pressCount == 1)
+        #expect(releaseCount == 1)
+        #expect(!service.isHotkeyPressed)
     }
 
-    @Test func startEnablesMonitoring() async throws {
+    @Test func eventsWithWrongKeyOrModifiersAreIgnored() {
         let service = HotkeyService()
-        service.start()
-        #expect(service.isMonitoring)
-        service.stop()
+        service.configuration = HotkeyConfiguration(keyCode: 96, modifiers: .command)
+        var pressCount = 0
+        service.onHotkeyPressed = { pressCount += 1 }
+
+        service.process(event(.keyDown, keyCode: 97, modifiers: .command))
+        service.process(event(.keyDown, keyCode: 96))
+
+        #expect(pressCount == 0)
+        #expect(!service.isHotkeyPressed)
     }
 
-    @Test func stopDisablesMonitoring() async throws {
+    @Test func modifierHotkeyUsesFlagsChangedEvents() {
         let service = HotkeyService()
-        service.start()
-        #expect(service.isMonitoring)
-        service.stop()
-        #expect(!service.isMonitoring)
+        var pressCount = 0
+        var releaseCount = 0
+        service.onHotkeyPressed = { pressCount += 1 }
+        service.onHotkeyReleased = { releaseCount += 1 }
+
+        service.process(event(.flagsChanged, keyCode: 61, modifiers: .option))
+        service.process(event(.flagsChanged, keyCode: 61))
+
+        #expect(pressCount == 1)
+        #expect(releaseCount == 1)
+        #expect(!service.isHotkeyPressed)
     }
 
-    @Test func doubleStartDoesNotCreateDuplicateMonitors() async throws {
+    @Test func changingConfigurationWhileStoppedDoesNotStartMonitoring() {
         let service = HotkeyService()
-        service.start()
-        service.start()
-        #expect(service.isMonitoring)
-        service.stop()
-        #expect(!service.isMonitoring)
-    }
-
-    @Test func defaultConfiguration() {
-        let service = HotkeyService()
-        #expect(service.configuration.keyCode == 61)
-    }
-
-    @Test func updateConfigurationWhenMonitoring() async throws {
-        let service = HotkeyService()
-        service.start()
-        #expect(service.isMonitoring)
-        #expect(service.configuration.keyCode == 61)
 
         service.updateConfiguration(HotkeyConfiguration(keyCode: 54, modifiers: []))
 
-        #expect(service.isMonitoring)
         #expect(service.configuration.keyCode == 54)
-
-        service.stop()
+        #expect(!service.isMonitoring)
     }
 
-    @Test func updateConfigurationWhenStopped() {
-        let service = HotkeyService()
-        #expect(!service.isMonitoring)
-        #expect(service.configuration.keyCode == 61)
-
-        service.updateConfiguration(HotkeyConfiguration(keyCode: 54, modifiers: []))
-
-        #expect(!service.isMonitoring)
-        #expect(service.configuration.keyCode == 54)
-    }
-
-    @Test func stopWhenNotMonitoringIsNoop() {
-        let service = HotkeyService()
-        #expect(!service.isMonitoring)
-        service.stop()
-        #expect(!service.isMonitoring)
+    private func event(
+        _ kind: HotkeyEvent.Kind,
+        keyCode: UInt16,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> HotkeyEvent {
+        HotkeyEvent(kind: kind, keyCode: keyCode, modifiers: modifiers)
     }
 }

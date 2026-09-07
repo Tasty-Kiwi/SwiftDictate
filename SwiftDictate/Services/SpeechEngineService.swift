@@ -4,7 +4,6 @@ import Foundation
 
 enum SpeechEngineError: Error, Equatable, LocalizedError {
     case transcriberNotInitialized
-    case modelNotInstalled
     case modelDownloadFailed
     case analyzerStartFailed
     case inputStreamNotReady
@@ -15,8 +14,6 @@ enum SpeechEngineError: Error, Equatable, LocalizedError {
         switch self {
         case .transcriberNotInitialized:
             "Speech transcriber has not been set up."
-        case .modelNotInstalled:
-            "Speech recognition model is not installed."
         case .modelDownloadFailed:
             "Failed to download the speech recognition model."
         case .analyzerStartFailed:
@@ -47,47 +44,22 @@ final class SpeechEngineService: @unchecked Sendable {
     private var resultContinuation: AsyncStream<TranscriptionResult>.Continuation?
     private var _resultsStream: AsyncStream<TranscriptionResult>?
 
-    enum ModelState: Equatable {
+    enum ModelState {
         case unknown
-        case notRegistered
         case downloading
         case ready
         case failed(Error)
-
-        static func == (lhs: ModelState, rhs: ModelState) -> Bool {
-            switch (lhs, rhs) {
-            case (.unknown, .unknown),
-                 (.notRegistered, .notRegistered),
-                 (.downloading, .downloading):
-                return true
-            case (.ready, .ready):
-                return true
-            case (.failed(let lhsError), .failed(let rhsError)):
-                return lhsError.localizedDescription == rhsError.localizedDescription
-            default:
-                return false
-            }
-        }
     }
 
     deinit {
-        stopAnalysis()
+        MainActor.assumeIsolated {
+            stopAnalysis()
+        }
     }
 
     func supportedLocale(for locale: Locale) async -> Bool {
         let supported = await SpeechTranscriber.supportedLocales
         return supported.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
-    }
-
-    func currentModelState(for locale: Locale) async {
-        guard await supportedLocale(for: locale) else {
-            modelState = .failed(SpeechEngineError.localeNotSupported(locale))
-            return
-        }
-
-        let installed = await Set(SpeechTranscriber.installedLocales)
-        let isInstalled = installed.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
-        modelState = isInstalled ? .ready : .notRegistered
     }
 
     @MainActor
@@ -103,17 +75,27 @@ final class SpeechEngineService: @unchecked Sendable {
         let createdAnalyzer = SpeechAnalyzer(modules: [createdTranscriber])
         analyzer = createdAnalyzer
 
-        let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [createdTranscriber])
-        guard let format else {
-            throw SpeechEngineError.formatMismatch
+        do {
+            let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [createdTranscriber])
+            guard let format else {
+                throw SpeechEngineError.formatMismatch
+            }
+            analyzerFormat = format
+
+            let (stream, builder) = AsyncStream<AnalyzerInput>.makeStream()
+            inputBuilder = builder
+
+            try await createdAnalyzer.start(inputSequence: stream)
+            isReady = true
+        } catch {
+            inputBuilder?.finish()
+            inputBuilder = nil
+            analyzerFormat = nil
+            analyzer = nil
+            transcriber = nil
+            isReady = false
+            throw error
         }
-        analyzerFormat = format
-
-        let (stream, builder) = AsyncStream<AnalyzerInput>.makeStream()
-        inputBuilder = builder
-
-        try await createdAnalyzer.start(inputSequence: stream)
-        isReady = true
     }
 
     func downloadModelIfNeeded(for locale: Locale) async throws {
@@ -152,10 +134,6 @@ final class SpeechEngineService: @unchecked Sendable {
         }
     }
 
-    var audioFormat: AVAudioFormat? {
-        analyzerFormat
-    }
-
     func startAnalysis() throws {
         guard isReady, let _ = inputBuilder else {
             throw SpeechEngineError.inputStreamNotReady
@@ -171,7 +149,7 @@ final class SpeechEngineService: @unchecked Sendable {
             guard let self else { return }
             defer {
                 self.isRunning = false
-                self.resultContinuation?.finish()
+                self.finishResultsStream()
             }
 
             do {
@@ -180,23 +158,14 @@ final class SpeechEngineService: @unchecked Sendable {
 
                     let transcriptionResult = TranscriptionResult(
                         text: String(result.text.characters),
-                        attributedText: result.text,
-                        isFinal: result.isFinal,
-                        audioTimeRange: nil
+                        isFinal: result.isFinal
                     )
 
                     self.resultContinuation?.yield(transcriptionResult)
                 }
             } catch {
                 if !(error is CancellationError) {
-                    self.resultContinuation?.yield(
-                        TranscriptionResult(
-                            text: "",
-                            attributedText: AttributedString(),
-                            isFinal: true,
-                            audioTimeRange: nil
-                        )
-                    )
+                    self.modelState = .failed(error)
                 }
             }
         }
@@ -225,8 +194,14 @@ final class SpeechEngineService: @unchecked Sendable {
                 throw SpeechEngineError.formatMismatch
             }
 
+            var hasSuppliedInput = false
             var error: NSError?
             let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+                guard !hasSuppliedInput else {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
+                hasSuppliedInput = true
                 outStatus.pointee = .haveData
                 return buffer
             }
@@ -255,6 +230,7 @@ final class SpeechEngineService: @unchecked Sendable {
         isRunning = false
         recognizerTask?.cancel()
         recognizerTask = nil
+        finishResultsStream()
     }
 
     func finishInput() {
@@ -265,10 +241,6 @@ final class SpeechEngineService: @unchecked Sendable {
         stopAnalysis()
         inputBuilder?.finish()
         inputBuilder = nil
-        resultContinuation?.finish()
-        resultContinuation = nil
-        _resultsStream = nil
-        recognizerTask = nil
         isRunning = false
         isReady = false
         transcriber = nil
@@ -288,16 +260,12 @@ final class SpeechEngineService: @unchecked Sendable {
     }
 
     func cancel() {
-        inputBuilder?.finish()
-        inputBuilder = nil
+        resetForNewSession()
+    }
+
+    private func finishResultsStream() {
         resultContinuation?.finish()
         resultContinuation = nil
-        recognizerTask?.cancel()
-        recognizerTask = nil
-        isRunning = false
-        isReady = false
-        transcriber = nil
-        analyzer = nil
-        analyzerFormat = nil
+        _resultsStream = nil
     }
 }

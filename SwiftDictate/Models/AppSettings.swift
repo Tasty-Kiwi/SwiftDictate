@@ -2,7 +2,7 @@ import Foundation
 
 @Observable
 final class AppSettings {
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     var recordingModeRaw: String {
         didSet { defaults.set(recordingModeRaw, forKey: Keys.recordingMode) }
@@ -19,8 +19,8 @@ final class AppSettings {
     var autoInsertText: Bool {
         didSet { defaults.set(autoInsertText, forKey: Keys.autoInsertText) }
     }
-    var clearClipboardAfterPaste: Bool {
-        didSet { defaults.set(clearClipboardAfterPaste, forKey: Keys.clearClipboardAfterPaste) }
+    var restoreClipboardAfterPaste: Bool {
+        didSet { defaults.set(restoreClipboardAfterPaste, forKey: Keys.restoreClipboardAfterPaste) }
     }
     var enableSmartCleanup: Bool {
         didSet { defaults.set(enableSmartCleanup, forKey: Keys.enableSmartCleanup) }
@@ -38,39 +38,26 @@ final class AppSettings {
         Locale(identifier: preferredLocaleIdentifier)
     }
 
-    init() {
+    init(defaults: UserDefaults = .standard, locale: Locale = .current) {
+        self.defaults = defaults
+        defaults.register(defaults: Defaults.registrationValues(locale: locale))
+
         self.recordingModeRaw = defaults.string(forKey: Keys.recordingMode)
-            ?? RecordingMode.toggle.rawValue
+            ?? Defaults.recordingModeRaw
         self.enableFoundationModels = defaults.object(forKey: Keys.enableFoundationModels)
-            as? Bool ?? true
+            as? Bool ?? Defaults.enableFoundationModels
         self.enablePunctuationRestoration = defaults.object(forKey: Keys.enablePunctuationRestoration)
-            as? Bool ?? true
+            as? Bool ?? Defaults.enablePunctuationRestoration
         self.enableGrammarCorrection = defaults.object(forKey: Keys.enableGrammarCorrection)
-            as? Bool ?? true
+            as? Bool ?? Defaults.enableGrammarCorrection
         self.autoInsertText = defaults.object(forKey: Keys.autoInsertText)
-            as? Bool ?? true
-        self.clearClipboardAfterPaste = defaults.object(forKey: Keys.clearClipboardAfterPaste)
-            as? Bool ?? true
+            as? Bool ?? Defaults.autoInsertText
+        self.restoreClipboardAfterPaste = defaults.object(forKey: Keys.restoreClipboardAfterPaste)
+            as? Bool ?? Defaults.restoreClipboardAfterPaste
         self.enableSmartCleanup = defaults.object(forKey: Keys.enableSmartCleanup)
-            as? Bool ?? true
+            as? Bool ?? Defaults.enableSmartCleanup
         self.preferredLocaleIdentifier = defaults.string(forKey: Keys.preferredLocaleIdentifier)
-            ?? Locale.current.identifier(.bcp47)
-
-        registerDefaults()
-    }
-
-    private func registerDefaults() {
-        let defaultValues: [String: Any] = [
-            Keys.recordingMode: RecordingMode.toggle.rawValue,
-            Keys.enableFoundationModels: true,
-            Keys.enablePunctuationRestoration: true,
-            Keys.enableGrammarCorrection: true,
-            Keys.enableSmartCleanup: true,
-            Keys.autoInsertText: true,
-            Keys.clearClipboardAfterPaste: true,
-            Keys.preferredLocaleIdentifier: Locale.current.identifier(.bcp47),
-        ]
-        defaults.register(defaults: defaultValues)
+            ?? Defaults.preferredLocaleIdentifier(for: locale)
     }
 
     private enum Keys {
@@ -80,8 +67,36 @@ final class AppSettings {
         static let enableGrammarCorrection = "enableGrammarCorrection"
         static let enableSmartCleanup = "enableSmartCleanup"
         static let autoInsertText = "autoInsertText"
-        static let clearClipboardAfterPaste = "clearClipboardAfterPaste"
+        // Keep the persisted key for compatibility with existing installations.
+        static let restoreClipboardAfterPaste = "clearClipboardAfterPaste"
         static let preferredLocaleIdentifier = "preferredLocaleIdentifier"
+    }
+
+    private enum Defaults {
+        static let recordingModeRaw = RecordingMode.toggle.rawValue
+        static let enableFoundationModels = true
+        static let enablePunctuationRestoration = true
+        static let enableGrammarCorrection = true
+        static let enableSmartCleanup = true
+        static let autoInsertText = true
+        static let restoreClipboardAfterPaste = true
+
+        static func preferredLocaleIdentifier(for locale: Locale) -> String {
+            locale.identifier(.bcp47)
+        }
+
+        static func registrationValues(locale: Locale) -> [String: Any] {
+            [
+                Keys.recordingMode: recordingModeRaw,
+                Keys.enableFoundationModels: enableFoundationModels,
+                Keys.enablePunctuationRestoration: enablePunctuationRestoration,
+                Keys.enableGrammarCorrection: enableGrammarCorrection,
+                Keys.enableSmartCleanup: enableSmartCleanup,
+                Keys.autoInsertText: autoInsertText,
+                Keys.restoreClipboardAfterPaste: restoreClipboardAfterPaste,
+                Keys.preferredLocaleIdentifier: preferredLocaleIdentifier(for: locale),
+            ]
+        }
     }
 
     enum RecordingMode: String, CaseIterable {

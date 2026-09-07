@@ -2,11 +2,21 @@ import AppKit
 import Foundation
 import os
 
+struct HotkeyEvent {
+    enum Kind {
+        case keyDown
+        case keyUp
+        case flagsChanged
+    }
+
+    let kind: Kind
+    let keyCode: UInt16
+    let modifiers: NSEvent.ModifierFlags
+}
+
 final class HotkeyService {
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private var isPressed = false
-    private var lastPressTime: Date = .distantPast
 
     var onHotkeyPressed: (() -> Void)?
     var onHotkeyReleased: (() -> Void)?
@@ -18,8 +28,6 @@ final class HotkeyService {
         category: "HotkeyService"
     )
 
-    private(set) var globalMonitorActive = false
-
     var isMonitoring: Bool {
         globalMonitor != nil || localMonitor != nil
     }
@@ -27,31 +35,24 @@ final class HotkeyService {
     func start() {
         guard !isMonitoring else { return }
 
-        let hasAX = AXIsProcessTrusted()
-        print("[SwiftDictate] Hotkey starting — accessibility trusted: \(hasAX)")
-
         let matching: NSEvent.EventTypeMask = [.keyDown, .keyUp, .flagsChanged]
-
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: matching) { [weak self] event in
-            self?.handleKeyEvent(event)
+            self?.process(event)
         }
-        globalMonitorActive = globalMonitor != nil
-
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: matching) { [weak self] event in
-            self?.handleKeyEvent(event)
+            self?.process(event)
             return event
         }
 
-        print("[SwiftDictate] Hotkey monitoring started — \(self.configuration.displayName) (keyCode: \(self.configuration.keyCode)) — global: \(self.globalMonitor != nil) local: \(self.localMonitor != nil)")
-
         if globalMonitor == nil {
-            print("[SwiftDictate] WARNING: Global monitor failed — accessibility trusted: \(hasAX). Hotkey only works when app is focused.")
+            logger.warning("Global hotkey monitor unavailable; hotkey works only while SwiftDictate is focused")
         }
-
-        logger.info("Hotkey monitoring started with \(self.configuration.displayName) — global: \(self.globalMonitorActive)")
+        logger.info("Hotkey monitoring started with \(self.configuration.displayName)")
     }
 
     func stop() {
+        guard isMonitoring else { return }
+
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
         }
@@ -60,8 +61,6 @@ final class HotkeyService {
         }
         globalMonitor = nil
         localMonitor = nil
-        globalMonitorActive = false
-        isPressed = false
         isHotkeyPressed = false
 
         logger.info("Hotkey monitoring stopped")
@@ -74,61 +73,51 @@ final class HotkeyService {
         if wasMonitoring { start() }
     }
 
-    private func handleKeyEvent(_ event: NSEvent) {
-        guard event.keyCode == configuration.keyCode else { return }
-
-        let eventModifiers = normalizedModifiers(for: event)
-        let configModifiers = configuration.modifiers.intersection(.deviceIndependentFlagsMask)
-
-        if eventModifiers != configModifiers {
-            print("[SwiftDictate] Hotkey keyCode match but modifier mismatch — event: \(eventModifiers.rawValue) config: \(configModifiers.rawValue)")
+    func process(_ event: HotkeyEvent) {
+        guard event.keyCode == configuration.keyCode,
+              normalizedModifiers(for: event) == configuration.modifiers.intersection(.deviceIndependentFlagsMask) else {
+            return
         }
 
-        guard eventModifiers == configModifiers else { return }
-
-        switch event.type {
+        switch event.kind {
         case .keyDown:
-            if !isPressed {
-                isPressed = true
-                isHotkeyPressed = true
-                lastPressTime = Date()
-                print("[SwiftDictate] Hotkey pressed: \(self.configuration.displayName)")
-                onHotkeyPressed?()
-            }
-
+            press()
         case .keyUp:
-            if isPressed {
-                isPressed = false
-                isHotkeyPressed = false
-                print("[SwiftDictate] Hotkey released: \(self.configuration.displayName)")
-                onHotkeyReleased?()
-            }
-
+            release()
         case .flagsChanged:
             guard let selfFlag = modifierFlag(for: event.keyCode) else { return }
-            let flagPresent = event.modifierFlags.contains(selfFlag)
-
-            if flagPresent && !isPressed {
-                isPressed = true
-                isHotkeyPressed = true
-                lastPressTime = Date()
-                print("[SwiftDictate] Hotkey pressed: \(self.configuration.displayName)")
-                onHotkeyPressed?()
-            } else if !flagPresent && isPressed {
-                isPressed = false
-                isHotkeyPressed = false
-                print("[SwiftDictate] Hotkey released: \(self.configuration.displayName)")
-                onHotkeyReleased?()
-            }
-
-        default:
-            break
+            event.modifiers.contains(selfFlag) ? press() : release()
         }
     }
 
-    private func normalizedModifiers(for event: NSEvent) -> NSEvent.ModifierFlags {
-        let raw = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        var modifiers = raw
+    private func process(_ event: NSEvent) {
+        let kind: HotkeyEvent.Kind
+        switch event.type {
+        case .keyDown: kind = .keyDown
+        case .keyUp: kind = .keyUp
+        case .flagsChanged: kind = .flagsChanged
+        default: return
+        }
+
+        process(HotkeyEvent(kind: kind, keyCode: event.keyCode, modifiers: event.modifierFlags))
+    }
+
+    private func press() {
+        guard !isHotkeyPressed else { return }
+        isHotkeyPressed = true
+        logger.debug("Hotkey pressed: \(self.configuration.displayName)")
+        onHotkeyPressed?()
+    }
+
+    private func release() {
+        guard isHotkeyPressed else { return }
+        isHotkeyPressed = false
+        logger.debug("Hotkey released: \(self.configuration.displayName)")
+        onHotkeyReleased?()
+    }
+
+    private func normalizedModifiers(for event: HotkeyEvent) -> NSEvent.ModifierFlags {
+        var modifiers = event.modifiers.intersection(.deviceIndependentFlagsMask)
         if let selfModifier = modifierFlag(for: event.keyCode) {
             modifiers.remove(selfModifier)
         }

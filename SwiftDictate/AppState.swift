@@ -2,25 +2,14 @@ import SwiftUI
 import AVFoundation
 import Observation
 
-private final class RecordingOverlayPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
 @MainActor
 @Observable
 final class AppState {
     var recordingState: RecordingState = .idle
     var volatileTranscript: String = ""
     var finalizedTranscript: String = ""
-    var currentTranscript: AttributedString = ""
-    var errorMessage: String?
-    var isRestoringState = false
-    var showSettings = false
-    var isProcessing = false
-    var onboardingWindow: NSWindow?
-    var overlayWindow: NSWindow?
     var recordingTriggeredByHotkey = false
+    var recordingStartedAt: Date?
 
     let permissionsService = PermissionsService()
     let audioCaptureService = AudioCaptureService()
@@ -29,35 +18,19 @@ final class AppState {
     let textInsertionService = TextInsertionService()
     let hotkeyService = HotkeyService()
     let settings = AppSettings()
+    private let windowController = AppWindowController()
 
     private var recordingTask: Task<Void, Never>?
     private var resultCollectionTask: Task<Void, Never>?
-    private var audioStream: AsyncStream<AVAudioPCMBuffer>?
-    private var hotkeyPressTask: Task<Void, Never>?
-    private var hotkeyReleaseTask: Task<Void, Never>?
+    private var audioStream: AsyncStream<CapturedAudioBuffer>?
     private var workspaceObserver: (any NSObjectProtocol)?
-    private var permissionPollTask: Task<Void, Never>?
     private var setupTask: Task<Void, Never>?
-    private var onboardingShown = false
     private var insertionTargetApplication: NSRunningApplication?
+    private var recordingSessionID = UUID()
 
     init() {
-        Task { @MainActor in
+        Task {
             await initialize()
-            hotkeyService.start()
-
-            if !hotkeyService.globalMonitorActive {
-                print("[SwiftDictate] Global monitor not active — re-requesting accessibility to refresh TCC entry")
-                permissionsService.requestAccessibility()
-                await permissionsService.pollAccessibilityUntilTrusted()
-                hotkeyService.stop()
-                hotkeyService.start()
-            }
-
-            if !hasRequiredPermissions, !onboardingShown {
-                onboardingShown = true
-                showOnboarding()
-            }
         }
     }
 
@@ -73,17 +46,11 @@ final class AppState {
     var canStartRecording: Bool { recordingState.canStartRecording }
 
     var hasRequiredPermissions: Bool {
-        permissionsService.microphoneAuthorized && permissionsService.accessibilityTrusted
+        permissionsService.allGranted
     }
 
     func initialize() async {
         permissionsService.refreshAll()
-
-        if !permissionsService.accessibilityTrusted {
-            permissionsService.requestAccessibility()
-            await permissionsService.pollAccessibilityUntilTrusted()
-        }
-
         foundationModelsService.checkAvailability()
 
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -93,84 +60,83 @@ final class AppState {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.permissionsService.refreshAll()
-
-                if self.permissionsService.accessibilityTrusted, !self.hotkeyService.globalMonitorActive {
-                    self.hotkeyService.stop()
-                    self.hotkeyService.start()
-                }
-
-                if self.hasRequiredPermissions,
-                   self.recordingState == .requestingPermissions {
-                    self.recordingState = .ready
-                }
+                await self.refreshPermissionsAndUpdateState()
             }
-        }
-
-        if !hasRequiredPermissions {
-            recordingState = .requestingPermissions
-            startPermissionPolling()
-        } else {
-            recordingState = .ready
-            await setupSpeechEngine()
         }
 
         setupHotkeyCallbacks()
+
+        if !hasRequiredPermissions {
+            recordingState = .requestingPermissions
+            showOnboarding()
+        } else {
+            startHotkeyMonitoringIfPossible()
+            await setupSpeechEngine()
+            recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+        }
     }
 
-    private func startPermissionPolling() {
-        permissionPollTask?.cancel()
-        permissionPollTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { break }
-                self.permissionsService.refreshAll()
-                if self.hasRequiredPermissions, self.recordingState == .requestingPermissions {
-                    self.recordingState = .ready
-                    Task { await self.setupSpeechEngine() }
-                    self.permissionPollTask?.cancel()
-                }
+    /// Requests the three permissions SwiftDictate needs without blocking startup
+    /// while the user responds to the Accessibility system prompt.
+    func requestRequiredPermissions() async {
+        await permissionsService.requestRequiredPermissions()
+        await refreshPermissionsAndUpdateState()
+    }
 
-                if self.permissionsService.accessibilityTrusted, !self.hotkeyService.globalMonitorActive {
-                    self.hotkeyService.stop()
-                    self.hotkeyService.start()
-                }
+    /// Refreshes permission state after the app becomes active again from System Settings.
+    func refreshPermissionsAndUpdateState() async {
+        permissionsService.refreshAll()
+
+        guard hasRequiredPermissions else {
+            if !isRecording && !recordingState.isProcessing {
+                recordingState = .requestingPermissions
             }
+            showOnboarding()
+            return
         }
+
+        startHotkeyMonitoringIfPossible()
+        dismissOnboarding()
+
+        if case .requestingPermissions = recordingState {
+            await setupSpeechEngine()
+            recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+        }
+    }
+
+    private func startHotkeyMonitoringIfPossible() {
+        guard permissionsService.accessibilityTrusted, !hotkeyService.isMonitoring else { return }
+        hotkeyService.start()
     }
 
     private func setupHotkeyCallbacks() {
         hotkeyService.onHotkeyPressed = { [weak self] in
-            self?.hotkeyPressTask = Task { @MainActor [weak self] in
+            Task { @MainActor [weak self] in
                 await self?.handleHotkeyPress()
             }
         }
 
         hotkeyService.onHotkeyReleased = { [weak self] in
-            self?.hotkeyReleaseTask = Task { @MainActor [weak self] in
+            Task { @MainActor [weak self] in
                 await self?.handleHotkeyRelease()
             }
         }
     }
 
     private func handleHotkeyPress() async {
-        recordingTriggeredByHotkey = true
-        print("[SwiftDictate] handleHotkeyPress — mode: \(settings.recordingMode.displayName)")
-
         switch settings.recordingMode {
         case .pushToTalk:
-            if canStartRecording {
-                await startRecording()
-            }
+            guard canStartRecording else { return }
+            recordingTriggeredByHotkey = true
+            await startRecording()
 
         case .toggle:
+            recordingTriggeredByHotkey = true
             await toggleRecording()
         }
     }
 
     private func handleHotkeyRelease() async {
-        print("[SwiftDictate] handleHotkeyRelease — isRecording: \(isRecording)")
         if settings.recordingMode == .pushToTalk, isRecording {
             stopRecording()
         }
@@ -207,8 +173,7 @@ final class AppState {
         guard !isRecording else { return }
 
         if !hasRequiredPermissions {
-            permissionsService.refreshAll()
-            recordingState = .requestingPermissions
+            await refreshPermissionsAndUpdateState()
             return
         }
 
@@ -220,20 +185,13 @@ final class AppState {
             }
         }
 
-        recordingState = .recording
         resetTranscript()
-        errorMessage = nil
+        recordingSessionID = UUID()
         insertionTargetApplication = NSWorkspace.shared.frontmostApplication
-
-        if recordingTriggeredByHotkey {
-            showOverlay()
-        }
 
         do {
             audioStream = try audioCaptureService.start()
-
             try speechEngineService.startAnalysis()
-
             startResultCollection()
 
             guard let audioStream else {
@@ -241,17 +199,22 @@ final class AppState {
                 return
             }
 
-            recordingTask = Task { @MainActor [weak self] in
+            recordingState = .recording
+            recordingStartedAt = .now
+
+            if recordingTriggeredByHotkey {
+                showOverlay()
+            }
+
+            recordingTask = Task { [weak self] in
                 guard let self else { return }
                 do {
-                    for await buffer in audioStream {
+                    for await capturedBuffer in audioStream {
                         guard self.isRecording, !Task.isCancelled else { break }
-                        try self.speechEngineService.feedAudioBuffer(buffer)
+                        try self.speechEngineService.feedAudioBuffer(capturedBuffer.buffer)
                     }
                 } catch {
-                    await MainActor.run {
-                        self.handleError(error)
-                    }
+                    self.handleError(error)
                 }
             }
         } catch {
@@ -260,19 +223,17 @@ final class AppState {
     }
 
     private func startResultCollection() {
-        resultCollectionTask = Task { @MainActor [weak self] in
+        resultCollectionTask = Task { [weak self] in
             guard let self else { return }
 
             for await result in speechEngineService.results() {
                 guard !Task.isCancelled else { break }
 
-                await MainActor.run {
-                    if result.isFinal {
-                        self.finalizedTranscript += result.text
-                        self.volatileTranscript = ""
-                    } else {
-                        self.volatileTranscript = result.text
-                    }
+                if result.isFinal {
+                    self.finalizedTranscript += result.text
+                    self.volatileTranscript = ""
+                } else {
+                    self.volatileTranscript = result.text
                 }
             }
         }
@@ -280,8 +241,10 @@ final class AppState {
 
     func stopRecording() {
         guard isRecording else { return }
+        let sessionID = recordingSessionID
 
         recordingState = .processing
+        recordingStartedAt = nil
         dismissOverlay()
         recordingTriggeredByHotkey = false
 
@@ -297,27 +260,26 @@ final class AppState {
             do {
                 try await speechEngineService.finalizeResults()
             } catch {
+                guard recordingSessionID == sessionID else { return }
                 handleError(error)
                 return
             }
 
             await waitForResultCollectionToFinish()
+            guard recordingSessionID == sessionID else { return }
 
             guard !finalizedTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                print("[SwiftDictate] Skipping processing/insertion because transcription returned empty text")
-                speechEngineService.resetForNewSession()
-                resultCollectionTask = nil
-                insertionTargetApplication = nil
-                await setupSpeechEngine()
-                recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+                await prepareForNextRecording()
                 return
             }
 
             let transcriptForInsertion = await processTranscriptIfNeeded(finalizedTranscript)
+            guard recordingSessionID == sessionID else { return }
 
             if settings.autoInsertText, !transcriptForInsertion.isEmpty {
                 do {
                     await waitForHotkeyRelease()
+                    guard recordingSessionID == sessionID else { return }
 
                     if let target = insertionTargetApplication,
                        target.bundleIdentifier != Bundle.main.bundleIdentifier,
@@ -325,27 +287,22 @@ final class AppState {
                         NSApp.yieldActivation(to: target)
                         target.activate(options: [])
                         try await Task.sleep(for: .milliseconds(75))
+                        guard recordingSessionID == sessionID else { return }
                     }
 
                     try await textInsertionService.insertText(
                         transcriptForInsertion,
                         autoInsert: settings.autoInsertText,
-                        clearClipboardAfterPaste: settings.clearClipboardAfterPaste
+                        restoreClipboardAfterPaste: settings.restoreClipboardAfterPaste
                     )
                 } catch {
+                    guard recordingSessionID == sessionID else { return }
                     handleError(error)
                     return
                 }
             }
 
-            speechEngineService.resetForNewSession()
-            resultCollectionTask?.cancel()
-            resultCollectionTask = nil
-            insertionTargetApplication = nil
-
-            await setupSpeechEngine()
-
-            recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+            await prepareForNextRecording()
         }
     }
 
@@ -380,20 +337,12 @@ final class AppState {
         }
     }
 
-    func processTranscript(_ text: String) {
-        Task {
-            _ = await processTranscriptIfNeeded(text)
-        }
-    }
-
     private func processTranscriptIfNeeded(_ text: String) async -> String {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            print("[SwiftDictate] FM processing skipped — empty transcript")
             return text
         }
 
         guard settings.enableFoundationModels, foundationModelsService.isAvailable else {
-            print("[SwiftDictate] FM processing skipped — enabled:\(settings.enableFoundationModels) available:\(foundationModelsService.isAvailable)")
             return text
         }
 
@@ -401,26 +350,20 @@ final class AppState {
             var processed = text
 
             if settings.enableSmartCleanup {
-                print("[SwiftDictate] FM: starting smart cleanup...")
                 processed = try await foundationModelsService.cleanupTranscript(processed)
-                print("[SwiftDictate] FM: cleanup complete — \(processed.count) chars")
             }
 
             if settings.enablePunctuationRestoration {
-                print("[SwiftDictate] FM: starting punctuation restoration...")
                 processed = try await foundationModelsService.restorePunctuation(processed)
             }
 
             if settings.enableGrammarCorrection {
-                print("[SwiftDictate] FM: starting grammar correction...")
                 processed = try await foundationModelsService.correctGrammar(processed)
             }
 
             finalizedTranscript = processed
-            print("[SwiftDictate] FM: all processing complete — final: \"\(processed)\"")
             return processed
         } catch {
-            print("[SwiftDictate] FM processing failed: \(error.localizedDescription)")
             return text
         }
     }
@@ -428,87 +371,66 @@ final class AppState {
     func resetTranscript() {
         volatileTranscript = ""
         finalizedTranscript = ""
-        currentTranscript = ""
     }
 
     func handleError(_ error: Error) {
-        errorMessage = error.localizedDescription
         recordingState = .error(error)
         dismissOverlay()
         recordingTriggeredByHotkey = false
-
-        if audioCaptureService.isRunning {
-            audioCaptureService.stop()
-        }
-
-        if speechEngineService.isRunning {
-            speechEngineService.stopAnalysis()
-        }
+        resetRecordingResources()
     }
 
     func retrySetup() async {
-        recordingState = .ready
-        errorMessage = nil
+        resetRecordingResources()
+        permissionsService.refreshAll()
+
+        guard hasRequiredPermissions else {
+            recordingState = .requestingPermissions
+            showOnboarding()
+            return
+        }
+
+        startHotkeyMonitoringIfPossible()
         await setupSpeechEngine()
+        recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+    }
+
+    private func prepareForNextRecording() async {
+        resetRecordingResources()
+        await setupSpeechEngine()
+        recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+    }
+
+    private func resetRecordingResources() {
+        recordingSessionID = UUID()
+        recordingStartedAt = nil
+        recordingTask?.cancel()
+        recordingTask = nil
+        resultCollectionTask?.cancel()
+        resultCollectionTask = nil
+        audioStream = nil
+        insertionTargetApplication = nil
+        audioCaptureService.stop()
+        speechEngineService.resetForNewSession()
     }
 
     private func showOverlay() {
-        guard overlayWindow == nil else { return }
-
-        let overlay = RecordingOverlayView().environment(self)
-        let hostingVC = NSHostingController(rootView: overlay)
-        let window = RecordingOverlayPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 320, height: 200),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentViewController = hostingVC
-        window.isFloatingPanel = true
-        window.hidesOnDeactivate = false
-        window.isReleasedWhenClosed = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.level = .statusBar
-        window.hasShadow = false
-        window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-        window.center()
-        window.orderFrontRegardless()
-        overlayWindow = window
+        windowController.showRecordingOverlay(for: self)
     }
 
     private func dismissOverlay() {
-        overlayWindow?.close()
-        overlayWindow = nil
-    }
-
-    func cleanup() {
-        stopRecording()
-        hotkeyService.stop()
-        speechEngineService.cancel()
-        foundationModelsService.resetSession()
+        windowController.dismissRecordingOverlay()
     }
 
     func showOnboarding() {
-        guard onboardingWindow == nil else { return }
+        windowController.showOnboarding(for: self)
+    }
 
-        let onboardingVC = NSHostingController(
-            rootView: PermissionsOnboardingView()
-                .environment(self)
-                .onChange(of: hasRequiredPermissions) { _, hasPermissions in
-                    if hasPermissions {
-                        self.onboardingWindow?.close()
-                        self.onboardingWindow = nil
-                    }
-                }
-        )
+    func dismissOnboarding() {
+        windowController.dismissOnboarding()
+    }
 
-        let window = NSWindow(contentViewController: onboardingVC)
-        window.title = "Welcome to SwiftDictate"
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 440, height: 520))
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        onboardingWindow = window
+    func showSettings() {
+        windowController.showSettings(for: self)
     }
 }

@@ -1,29 +1,12 @@
 import Foundation
 
-enum RecordingState: Equatable {
+enum RecordingState {
     case idle
     case requestingPermissions
     case ready
     case recording
     case processing
-    case paused
     case error(Error)
-
-    static func == (lhs: RecordingState, rhs: RecordingState) -> Bool {
-        switch (lhs, rhs) {
-        case (.idle, .idle),
-             (.requestingPermissions, .requestingPermissions),
-             (.ready, .ready),
-             (.recording, .recording),
-             (.processing, .processing),
-             (.paused, .paused):
-            return true
-        case (.error(let lhsError), .error(let rhsError)):
-            return lhsError.localizedDescription == rhsError.localizedDescription
-        default:
-            return false
-        }
-    }
 
     var displayName: String {
         switch self {
@@ -32,20 +15,30 @@ enum RecordingState: Equatable {
         case .ready: "Ready"
         case .recording: "Recording..."
         case .processing: "Processing..."
-        case .paused: "Paused"
         case .error: "Error"
         }
     }
 
     var isRecording: Bool {
-        self == .recording
+        if case .recording = self {
+            return true
+        }
+        return false
     }
 
     var canStartRecording: Bool {
-        self == .ready || self == .idle
+        switch self {
+        case .ready, .idle:
+            true
+        default:
+            false
+        }
     }
 
     var isProcessing: Bool {
-        self == .processing
+        if case .processing = self {
+            return true
+        }
+        return false
     }
 }

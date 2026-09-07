@@ -1,77 +1,87 @@
-import Testing
 import AVFoundation
-import Foundation
+import Testing
 @testable import SwiftDictate
 
 struct SpeechEngineServiceTests {
 
-    @Test func initialModelStateIsUnknown() {
+    @Test func startsWithoutAnInitializedInputStream() {
         let service = SpeechEngineService()
-        #expect(service.modelState == .unknown)
-    }
 
-    @Test func initiallyNotReady() {
-        let service = SpeechEngineService()
         #expect(!service.isReady)
-    }
-
-    @Test func initiallyNotRunning() {
-        let service = SpeechEngineService()
         #expect(!service.isRunning)
+        guard case .unknown = service.modelState else {
+            Issue.record("A new service should not report a model state before setup.")
+            return
+        }
     }
 
-    @Test func startAnalysisWhenNotReadyThrows() {
+    @Test func analysisCannotStartBeforeSetup() {
         let service = SpeechEngineService()
-        #expect(!service.isReady)
+
         #expect(throws: SpeechEngineError.inputStreamNotReady) {
             try service.startAnalysis()
         }
     }
 
-    @Test func feedAudioBufferWhenNotReadyThrows() {
+    @Test func audioCannotBeFedBeforeSetup() {
         let service = SpeechEngineService()
-        #expect(!service.isReady)
+
         #expect(throws: SpeechEngineError.inputStreamNotReady) {
             try service.feedAudioBuffer(AVAudioPCMBuffer())
         }
     }
 
-    @Test func stopAnalysisWhenNotRunningIsNoop() {
+    @Test func resetFinishesTheCurrentResultsStreamAndCreatesANewSessionStream() async {
         let service = SpeechEngineService()
-        #expect(!service.isRunning)
-        service.stopAnalysis()
-        #expect(!service.isRunning)
+        let firstStream = service.results()
+
+        service.resetForNewSession()
+
+        var firstIterator = firstStream.makeAsyncIterator()
+        let firstResult = await firstIterator.next()
+        #expect(firstResult == nil)
+
+        let secondStream = service.results()
+        let observation = ResultStreamObservation()
+        let reader = Task {
+            var iterator = secondStream.makeAsyncIterator()
+            await observation.startedWaiting()
+            _ = await iterator.next()
+            await observation.completed()
+        }
+
+        await observation.waitUntilReaderIsWaiting()
+        let completedBeforeReset = await observation.isCompleted
+        #expect(!completedBeforeReset)
+
+        service.resetForNewSession()
+        await reader.value
+        let completedAfterReset = await observation.isCompleted
+        #expect(completedAfterReset)
+    }
+}
+
+private actor ResultStreamObservation {
+    private var isReaderWaiting = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var isCompleted = false
+
+    func startedWaiting() {
+        isReaderWaiting = true
+        for waiter in waiters {
+            waiter.resume()
+        }
+        waiters.removeAll()
     }
 
-    @Test func cancelWhenIdleIsSafe() {
-        let service = SpeechEngineService()
-        service.cancel()
-        #expect(!service.isReady)
-        #expect(!service.isRunning)
+    func waitUntilReaderIsWaiting() async {
+        guard !isReaderWaiting else { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
     }
 
-    @Test func resultsReturnsStream() {
-        let service = SpeechEngineService()
-        let stream = service.results()
-        #expect(type(of: stream) == AsyncStream<TranscriptionResult>.self)
-    }
-
-    @Test func modelStateEquality() {
-        #expect(SpeechEngineService.ModelState.unknown == SpeechEngineService.ModelState.unknown)
-        #expect(SpeechEngineService.ModelState.ready == SpeechEngineService.ModelState.ready)
-        #expect(SpeechEngineService.ModelState.notRegistered == SpeechEngineService.ModelState.notRegistered)
-        #expect(SpeechEngineService.ModelState.downloading == SpeechEngineService.ModelState.downloading)
-    }
-
-    @Test func modelStateErrorEquality() {
-        let errorA = NSError(domain: "test", code: 1)
-        let errorB = NSError(domain: "test", code: 1)
-
-        #expect(SpeechEngineService.ModelState.failed(errorA) == SpeechEngineService.ModelState.failed(errorB))
-    }
-
-    @Test func modelStateInequality() {
-        #expect(SpeechEngineService.ModelState.unknown != SpeechEngineService.ModelState.ready)
-        #expect(SpeechEngineService.ModelState.ready != SpeechEngineService.ModelState.notRegistered)
+    func completed() {
+        isCompleted = true
     }
 }

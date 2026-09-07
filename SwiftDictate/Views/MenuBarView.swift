@@ -36,13 +36,13 @@ struct MenuBarView: View {
                 .font(.headline)
                 .foregroundStyle(.orange)
 
-            Text("SwiftDictate needs microphone and accessibility permissions to function.")
+            Text("SwiftDictate needs microphone, Accessibility, and Speech Recognition permissions to function.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Button("Open System Settings") {
-                appState.permissionsService.openAccessibilitySettings()
+            Button("Grant Permissions") {
+                Task { await appState.requestRequiredPermissions() }
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -65,7 +65,7 @@ struct MenuBarView: View {
 
                 if appState.isRecording {
                     PulseIndicator()
-                } else if appState.isProcessing {
+                } else if appState.recordingState.isProcessing {
                     ProgressView()
                         .controlSize(.small)
                 }
@@ -159,9 +159,7 @@ struct MenuBarView: View {
 
             Spacer()
 
-            if appState.foundationModelsService.isAvailable {
-                settingsButton
-            }
+            settingsButton
         }
     }
 
@@ -203,7 +201,6 @@ struct MenuBarView: View {
         case .ready: .green
         case .recording: .red
         case .processing: .orange
-        case .paused: .yellow
         case .error: .red
         }
     }
@@ -230,18 +227,7 @@ struct MenuBarView: View {
     }
 
     private func openSettings() {
-        Task { @MainActor in
-            let settingsVC = NSHostingController(
-                rootView: SettingsView().environment(appState)
-            )
-
-            let window = NSWindow(contentViewController: settingsVC)
-            window.title = "SwiftDictate Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable]
-            window.setContentSize(NSSize(width: 480, height: 380))
-            window.center()
-            window.makeKeyAndOrderFront(nil)
-        }
+        appState.showSettings()
     }
 }
 

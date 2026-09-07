@@ -3,53 +3,19 @@ import Testing
 
 struct FoundationModelsServiceTests {
 
-    @Test func initiallyUnavailable() {
+    @Test func emptyInputBypassesModelAvailability() async throws {
         let service = FoundationModelsService()
-        #expect(!service.isAvailable)
+
+        #expect(try await service.restorePunctuation("   ") == "   ")
+        #expect(try await service.correctGrammar("\n") == "\n")
+        #expect(try await service.cleanupTranscript("") == "")
     }
 
-    @Test func checkAvailabilitySetsState() {
+    @Test func nonEmptyInputReportsUnavailableUntilAvailabilityIsChecked() async {
         let service = FoundationModelsService()
-        service.checkAvailability()
-        #expect(type(of: service.isAvailable) == Bool.self)
-    }
 
-    @Test func restorePunctuationThrowsWhenUnavailable() async {
-        let service = FoundationModelsService()
-        #expect(!service.isAvailable)
         await #expect(throws: FoundationModelsError.unavailable) {
-            _ = try await service.restorePunctuation("hello world")
+            _ = try await service.cleanupTranscript("hello world")
         }
-    }
-
-    @Test func correctGrammarThrowsWhenUnavailable() async {
-        let service = FoundationModelsService()
-        #expect(!service.isAvailable)
-        await #expect(throws: FoundationModelsError.unavailable) {
-            _ = try await service.correctGrammar("hello world")
-        }
-    }
-
-    @Test func invokeCustomPromptThrowsWhenUnavailable() async {
-        let service = FoundationModelsService()
-        #expect(!service.isAvailable)
-        await #expect(throws: FoundationModelsError.unavailable) {
-            _ = try await service.invokeCustomPrompt("make it formal", on: "hello")
-        }
-    }
-
-    @Test func resetSessionWhenUnavailableDoesNotCrash() {
-        let service = FoundationModelsService()
-        service.resetSession()
-    }
-
-    @Test func isProcessingInitiallyFalse() {
-        let service = FoundationModelsService()
-        #expect(!service.isProcessing)
-    }
-
-    @Test func lastErrorInitiallyNil() {
-        let service = FoundationModelsService()
-        #expect(service.lastError == nil)
     }
 }
