@@ -31,6 +31,18 @@ struct SpeechEngineServiceTests {
         }
     }
 
+    @Test func regionalPreferenceExtensionResolvesToUnderlyingLanguageRegion() {
+        let requested = Locale(identifier: "en-US-u-rg-ltzzzz")
+        let supported = [Locale(identifier: "en-GB"), Locale(identifier: "en-US")]
+
+        let resolved = SpeechEngineService.closestSupportedLocale(
+            for: requested,
+            from: supported
+        )
+
+        #expect(resolved?.identifier(.bcp47) == "en-US")
+    }
+
     @Test func resetFinishesTheCurrentResultsStreamAndCreatesANewSessionStream() async {
         let service = SpeechEngineService()
         let firstStream = service.results()

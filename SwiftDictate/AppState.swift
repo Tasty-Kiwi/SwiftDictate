@@ -27,6 +27,7 @@ final class AppState {
     private var setupTask: Task<Void, Never>?
     private var insertionTargetApplication: NSRunningApplication?
     private var recordingSessionID = UUID()
+    private var hasCapturedAudio = false
 
     init() {
         Task {
@@ -72,7 +73,9 @@ final class AppState {
         } else {
             startHotkeyMonitoringIfPossible()
             await setupSpeechEngine()
-            recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+            if speechEngineService.isReady {
+                recordingState = .ready
+            }
         }
     }
 
@@ -100,7 +103,9 @@ final class AppState {
 
         if case .requestingPermissions = recordingState {
             await setupSpeechEngine()
-            recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+            if speechEngineService.isReady {
+                recordingState = .ready
+            }
         }
     }
 
@@ -130,6 +135,13 @@ final class AppState {
             recordingTriggeredByHotkey = true
             await startRecording()
 
+            // A modifier-key tap can be released while speech setup or audio
+            // startup is still suspended. Preserve that release instead of
+            // leaving the newly started recording running indefinitely.
+            if !hotkeyService.isHotkeyPressed, isRecording {
+                stopRecording()
+            }
+
         case .toggle:
             recordingTriggeredByHotkey = true
             await toggleRecording()
@@ -155,14 +167,12 @@ final class AppState {
             defer { self.setupTask = nil }
 
             do {
+                try await self.speechEngineService.downloadModelIfNeeded(
+                    for: self.settings.preferredLocale
+                )
                 try await self.speechEngineService.setupTranscriber(locale: self.settings.preferredLocale)
             } catch {
-                do {
-                    try await self.speechEngineService.downloadModelIfNeeded(for: self.settings.preferredLocale)
-                    try await self.speechEngineService.setupTranscriber(locale: self.settings.preferredLocale)
-                } catch {
-                    self.recordingState = .error(error)
-                }
+                self.recordingState = .error(error)
             }
         }
 
@@ -179,14 +189,12 @@ final class AppState {
 
         if !speechEngineService.isReady {
             await setupSpeechEngine()
-            guard speechEngineService.isReady else {
-                handleError(SpeechEngineError.transcriberNotInitialized)
-                return
-            }
+            guard speechEngineService.isReady else { return }
         }
 
         resetTranscript()
         recordingSessionID = UUID()
+        hasCapturedAudio = false
         insertionTargetApplication = NSWorkspace.shared.frontmostApplication
 
         do {
@@ -212,6 +220,7 @@ final class AppState {
                     for await capturedBuffer in audioStream {
                         guard self.isRecording, !Task.isCancelled else { break }
                         try self.speechEngineService.feedAudioBuffer(capturedBuffer.buffer)
+                        self.hasCapturedAudio = true
                     }
                 } catch {
                     self.handleError(error)
@@ -242,6 +251,7 @@ final class AppState {
     func stopRecording() {
         guard isRecording else { return }
         let sessionID = recordingSessionID
+        let shouldFinalizeResults = hasCapturedAudio
 
         recordingState = .processing
         recordingStartedAt = nil
@@ -255,6 +265,14 @@ final class AppState {
         recordingTask = nil
 
         speechEngineService.finishInput()
+
+        // Very short modifier-key taps can end before AVAudioEngine produces
+        // its first buffer. SpeechAnalyzer may then wait forever for input that
+        // never existed, so reset that empty session without finalizing it.
+        guard shouldFinalizeResults else {
+            Task { await prepareForNextRecording() }
+            return
+        }
 
         Task {
             do {
@@ -392,13 +410,17 @@ final class AppState {
 
         startHotkeyMonitoringIfPossible()
         await setupSpeechEngine()
-        recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+        if speechEngineService.isReady {
+            recordingState = .ready
+        }
     }
 
     private func prepareForNextRecording() async {
         resetRecordingResources()
         await setupSpeechEngine()
-        recordingState = speechEngineService.isReady ? .ready : .error(SpeechEngineError.transcriberNotInitialized)
+        if speechEngineService.isReady {
+            recordingState = .ready
+        }
     }
 
     private func resetRecordingResources() {
@@ -410,6 +432,7 @@ final class AppState {
         resultCollectionTask = nil
         audioStream = nil
         insertionTargetApplication = nil
+        hasCapturedAudio = false
         audioCaptureService.stop()
         speechEngineService.resetForNewSession()
     }

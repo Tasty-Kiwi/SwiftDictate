@@ -57,19 +57,54 @@ final class SpeechEngineService: @unchecked Sendable {
         }
     }
 
-    func supportedLocale(for locale: Locale) async -> Bool {
-        let supported = await SpeechTranscriber.supportedLocales
-        return supported.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+    func supportedLocale(for locale: Locale) async -> Locale? {
+        if let equivalent = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
+            return equivalent
+        }
+
+        // Locale.current can include user preference extensions such as
+        // `en-US-u-rg-ltzzzz`. Speech does not currently treat those as
+        // equivalent to the underlying language locale, so retry without the
+        // extensions before falling back to the closest supported language.
+        let languageLocale = Locale(identifier: locale.language.maximalIdentifier)
+        if let equivalent = await SpeechTranscriber.supportedLocale(
+            equivalentTo: languageLocale
+        ) {
+            return equivalent
+        }
+
+        let supportedLocales = await SpeechTranscriber.supportedLocales
+        return Self.closestSupportedLocale(for: locale, from: supportedLocales)
+    }
+
+    static func closestSupportedLocale(
+        for locale: Locale,
+        from supportedLocales: [Locale]
+    ) -> Locale? {
+        let languageCode = locale.language.languageCode
+        let region = locale.language.region
+
+        return supportedLocales.first {
+            $0.language.languageCode == languageCode && $0.language.region == region
+        } ?? supportedLocales.first {
+            $0.language.languageCode == languageCode
+        }
     }
 
     @MainActor
     func setupTranscriber(locale: Locale) async throws {
         guard !isReady, !isSettingUp else { return }
+        guard let supportedLocale = await supportedLocale(for: locale) else {
+            throw SpeechEngineError.localeNotSupported(locale)
+        }
 
         isSettingUp = true
         defer { isSettingUp = false }
 
-        let createdTranscriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+        let createdTranscriber = SpeechTranscriber(
+            locale: supportedLocale,
+            preset: .progressiveTranscription
+        )
         transcriber = createdTranscriber
 
         let createdAnalyzer = SpeechAnalyzer(modules: [createdTranscriber])
@@ -99,20 +134,18 @@ final class SpeechEngineService: @unchecked Sendable {
     }
 
     func downloadModelIfNeeded(for locale: Locale) async throws {
-        guard await supportedLocale(for: locale) else {
+        guard let supportedLocale = await supportedLocale(for: locale) else {
             throw SpeechEngineError.localeNotSupported(locale)
         }
 
-        let installed = await Set(SpeechTranscriber.installedLocales)
-        let isInstalled = installed.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+        let tempTranscriber = SpeechTranscriber(
+            locale: supportedLocale,
+            preset: .progressiveTranscription
+        )
 
-        if isInstalled {
-            modelState = .ready
-            return
-        }
-
-        let tempTranscriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-
+        // Asking AssetInventory for an installation request also reserves the
+        // locale when its assets are already installed. Checking only
+        // `installedLocales` skips that required reservation.
         guard let downloader = try await AssetInventory.assetInstallationRequest(
             supporting: [tempTranscriber]
         ) else {

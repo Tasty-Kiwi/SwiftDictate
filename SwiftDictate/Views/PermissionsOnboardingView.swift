@@ -13,7 +13,7 @@ struct PermissionsOnboardingView: View {
             Text("Welcome to SwiftDictate")
                 .font(.title)
 
-            Text("SwiftDictate needs a few permissions to work. Everything runs locally on your device — your data never leaves your Mac.")
+            Text("SwiftDictate needs a few permissions to capture speech, create a transcript, and insert text into other apps.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 

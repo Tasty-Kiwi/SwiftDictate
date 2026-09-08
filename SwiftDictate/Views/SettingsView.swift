@@ -25,6 +25,7 @@ struct SettingsView: View {
                     Label("About", systemImage: "info.circle")
                 }
         }
+        .padding(.top, 12)
         .frame(width: 480, height: 340)
     }
 
@@ -128,7 +129,7 @@ struct SettingsView: View {
             Text("SwiftDictate")
                 .font(.title)
 
-            Text("Fully on-device dictation for macOS 26+")
+            Text("Speech-to-text dictation for macOS 26+")
                 .foregroundStyle(.secondary)
 
             Text("Version 1.0")
@@ -142,17 +143,6 @@ struct SettingsView: View {
             .font(.caption2)
             .foregroundStyle(.tertiary)
 
-            Divider()
-                .frame(width: 200)
-
-            HStack {
-                Spacer()
-                Text("All processing is performed locally on your device. No data is ever transmitted off-device.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                Spacer()
-            }
         }
         .padding(40)
     }

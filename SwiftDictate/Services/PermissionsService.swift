@@ -22,7 +22,7 @@ enum Permission: String, CaseIterable {
         switch self {
         case .microphone: "Required to capture your voice for transcription."
         case .accessibility: "Required to insert transcribed text into other applications."
-        case .speechRecognition: "Required for on-device speech-to-text transcription."
+        case .speechRecognition: "Required for speech-to-text transcription."
         }
     }
 }
@@ -98,11 +98,21 @@ final class PermissionsService {
     }
 
     func requestSpeechRecognition() async -> Bool {
+        let status = await Self.requestSpeechRecognitionAuthorization()
+
+        let authorized = status == .authorized
+        speechRecognitionAuthorized = authorized
+        return authorized
+    }
+
+    /// `SFSpeechRecognizer` invokes its legacy completion handler on an arbitrary
+    /// queue. Keep that callback outside this app's default MainActor isolation.
+    private nonisolated static func requestSpeechRecognitionAuthorization() async
+        -> SFSpeechRecognizerAuthorizationStatus
+    {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
-                let authorized = status == .authorized
-                self.speechRecognitionAuthorized = authorized
-                continuation.resume(returning: authorized)
+                continuation.resume(returning: status)
             }
         }
     }

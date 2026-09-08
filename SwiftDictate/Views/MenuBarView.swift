@@ -20,10 +20,6 @@ struct MenuBarView: View {
 
             Divider()
 
-            recordingModeSection
-
-            Divider()
-
             actionButtons
         }
         .padding()
@@ -129,22 +125,6 @@ struct MenuBarView: View {
         }
     }
 
-    private var recordingModeSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Recording Mode")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Picker("Mode", selection: recordingModeBinding) {
-                ForEach(AppSettings.RecordingMode.allCases, id: \.self) { mode in
-                    Text(mode.displayName).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-        }
-    }
-
     private var actionButtons: some View {
         HStack {
             if appState.canStartRecording {
@@ -211,13 +191,6 @@ struct MenuBarView: View {
             return "\(total / 1000).\((total % 1000) / 100)k"
         }
         return "\(total)"
-    }
-
-    private var recordingModeBinding: Binding<AppSettings.RecordingMode> {
-        Binding(
-            get: { appState.settings.recordingMode },
-            set: { appState.settings.recordingMode = $0 }
-        )
     }
 
     private func copyTranscript() {

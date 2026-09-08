@@ -319,13 +319,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 82U8D8YF8B;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftDictate needs microphone access for speech transcription.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SwiftDictate uses on-device speech recognition to transcribe your speech.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SwiftDictate uses Apple's speech recognition services to transcribe your speech.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -352,13 +353,14 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 82U8D8YF8B;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SwiftDictate needs microphone access for speech transcription.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SwiftDictate uses on-device speech recognition to transcribe your speech.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "SwiftDictate uses Apple's speech recognition services to transcribe your speech.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

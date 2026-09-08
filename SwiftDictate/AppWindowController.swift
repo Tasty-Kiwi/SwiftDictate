@@ -63,7 +63,9 @@ final class AppWindowController {
 
     func showSettings(for appState: AppState) {
         if let settingsWindow {
+            NSApp.activate()
             settingsWindow.makeKeyAndOrderFront(nil)
+            settingsWindow.orderFrontRegardless()
             return
         }
 
@@ -75,7 +77,9 @@ final class AppWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.setContentSize(NSSize(width: 480, height: 380))
         window.center()
+        NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
         settingsWindow = window
     }
 }
