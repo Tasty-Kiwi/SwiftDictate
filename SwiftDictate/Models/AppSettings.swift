@@ -28,6 +28,9 @@ final class AppSettings {
     var preferredLocaleIdentifier: String {
         didSet { defaults.set(preferredLocaleIdentifier, forKey: Keys.preferredLocaleIdentifier) }
     }
+    var customWords: [String] {
+        didSet { defaults.set(customWords, forKey: Keys.customWords) }
+    }
 
     var recordingMode: RecordingMode {
         get { RecordingMode(rawValue: recordingModeRaw) ?? .toggle }
@@ -58,6 +61,24 @@ final class AppSettings {
             as? Bool ?? Defaults.enableSmartCleanup
         self.preferredLocaleIdentifier = defaults.string(forKey: Keys.preferredLocaleIdentifier)
             ?? Defaults.preferredLocaleIdentifier(for: locale)
+        self.customWords = Self.normalizedCustomWords(
+            defaults.stringArray(forKey: Keys.customWords) ?? []
+        )
+    }
+
+    @discardableResult
+    func addCustomWord(_ value: String) -> Bool {
+        guard let word = Self.normalizedCustomWord(value),
+              !customWords.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) else {
+            return false
+        }
+
+        customWords.append(word)
+        return true
+    }
+
+    func removeCustomWord(_ word: String) {
+        customWords.removeAll { $0 == word }
     }
 
     private enum Keys {
@@ -70,6 +91,7 @@ final class AppSettings {
         // Keep the persisted key for compatibility with existing installations.
         static let restoreClipboardAfterPaste = "clearClipboardAfterPaste"
         static let preferredLocaleIdentifier = "preferredLocaleIdentifier"
+        static let customWords = "customWords"
     }
 
     private enum Defaults {
@@ -95,8 +117,31 @@ final class AppSettings {
                 Keys.autoInsertText: autoInsertText,
                 Keys.restoreClipboardAfterPaste: restoreClipboardAfterPaste,
                 Keys.preferredLocaleIdentifier: preferredLocaleIdentifier(for: locale),
+                Keys.customWords: [String](),
             ]
         }
+    }
+
+    private static func normalizedCustomWords(_ values: [String]) -> [String] {
+        var result: [String] = []
+
+        for value in values {
+            guard let word = normalizedCustomWord(value),
+                  !result.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame }) else {
+                continue
+            }
+            result.append(word)
+        }
+
+        return result
+    }
+
+    private static func normalizedCustomWord(_ value: String) -> String? {
+        let normalized = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return normalized.isEmpty ? nil : normalized
     }
 
     enum RecordingMode: String, CaseIterable {

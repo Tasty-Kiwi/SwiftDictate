@@ -2,31 +2,71 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
+    @State private var newCustomWord = ""
+    @State private var selectedTab = SettingsTab.general
 
     var body: some View {
-        TabView {
-            generalSettings
-                .tabItem {
-                    Label("General", systemImage: "gearshape")
-                }
+        VStack(spacing: 0) {
+            settingsToolbar
 
-            recordingSettings
-                .tabItem {
-                    Label("Recording", systemImage: "mic.fill")
-                }
+            Divider()
 
-            processingSettings
-                .tabItem {
-                    Label("Processing", systemImage: "brain")
-                }
-
-            aboutTab
-                .tabItem {
-                    Label("About", systemImage: "info.circle")
-                }
+            ZStack {
+                tabPage(generalSettings, for: .general)
+                tabPage(recordingSettings, for: .recording)
+                tabPage(processingSettings, for: .processing)
+                tabPage(dictionarySettings, for: .dictionary)
+                tabPage(aboutTab, for: .about)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.top, 12)
-        .frame(width: 480, height: 340)
+        .frame(width: 500, height: 450)
+    }
+
+    private var settingsToolbar: some View {
+        HStack(spacing: 2) {
+            ForEach(SettingsTab.allCases) { tab in
+                Button {
+                    selectedTab = tab
+                } label: {
+                    VStack(spacing: 5) {
+                        Image(systemName: tab.systemImage)
+                            .font(.system(size: 27, weight: .regular))
+                            .frame(height: 30)
+
+                        Text(tab.title)
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(selectedTab == tab ? Color.accentColor : .secondary)
+                    .frame(width: 88, height: 68)
+                    .background {
+                        if selectedTab == tab {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color.primary.opacity(0.10))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+                                }
+                        }
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .help(tab.title)
+                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    private func tabPage<Content: View>(_ content: Content, for tab: SettingsTab) -> some View {
+        content
+            .opacity(selectedTab == tab ? 1 : 0)
+            .allowsHitTesting(selectedTab == tab)
+            .accessibilityHidden(selectedTab != tab)
     }
 
     private var generalSettings: some View {
@@ -147,6 +187,69 @@ struct SettingsView: View {
         .padding(40)
     }
 
+    private var dictionarySettings: some View {
+        Form {
+            Section {
+                HStack {
+                    TextField("Word or phrase", text: $newCustomWord)
+                        .onSubmit(addCustomWord)
+
+                    Button(action: addCustomWord) {
+                        Label("Add", systemImage: "plus")
+                    }
+                    .disabled(normalizedNewCustomWord.isEmpty || customWordAlreadyExists)
+                }
+            } header: {
+                Text("Custom Words")
+            } footer: {
+                Text("When Apple Intelligence is enabled, likely speech-recognition matches are corrected to these exact spellings.")
+            }
+
+            if appState.settings.customWords.isEmpty {
+                ContentUnavailableView(
+                    "No Custom Words",
+                    systemImage: "text.book.closed",
+                    description: Text("Add names, product terms, or phrases that need exact spelling.")
+                )
+            } else {
+                Section("Dictionary") {
+                    ForEach(appState.settings.customWords, id: \.self) { word in
+                        HStack {
+                            Text(word)
+                            Spacer()
+                            Button(role: .destructive) {
+                                appState.settings.removeCustomWord(word)
+                            } label: {
+                                Image(systemName: "trash")
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove \(word)")
+                        }
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var normalizedNewCustomWord: String {
+        newCustomWord
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    private var customWordAlreadyExists: Bool {
+        appState.settings.customWords.contains {
+            $0.caseInsensitiveCompare(normalizedNewCustomWord) == .orderedSame
+        }
+    }
+
+    private func addCustomWord() {
+        guard appState.settings.addCustomWord(newCustomWord) else { return }
+        newCustomWord = ""
+    }
+
     private var fmAvailable: Bool {
         appState.foundationModelsService.isAvailable
     }
@@ -220,6 +323,36 @@ struct SettingsView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
             }
+        }
+    }
+}
+
+private enum SettingsTab: String, CaseIterable, Identifiable {
+    case general
+    case recording
+    case processing
+    case dictionary
+    case about
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .general: "General"
+        case .recording: "Recording"
+        case .processing: "Processing"
+        case .dictionary: "Dictionary"
+        case .about: "About"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .recording: "mic"
+        case .processing: "brain"
+        case .dictionary: "text.book.closed"
+        case .about: "info.circle"
         }
     }
 }

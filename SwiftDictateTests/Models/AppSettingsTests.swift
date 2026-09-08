@@ -21,6 +21,7 @@ struct AppSettingsTests {
         #expect(settings.autoInsertText)
         #expect(settings.restoreClipboardAfterPaste)
         #expect(settings.preferredLocale.identifier(.bcp47) == "en-GB")
+        #expect(settings.customWords.isEmpty)
     }
 
     @Test func recordingModeAndOptionsPersistInTheInjectedStore() {
@@ -31,12 +32,15 @@ struct AppSettingsTests {
         settings.enableFoundationModels = false
         settings.autoInsertText = false
         settings.preferredLocaleIdentifier = "lt-LT"
+        #expect(settings.addCustomWord("  Axiomorix  "))
+        #expect(settings.addCustomWord("Foundation Models"))
 
         let reloaded = AppSettings(defaults: defaults)
         #expect(reloaded.recordingMode == .pushToTalk)
         #expect(!reloaded.enableFoundationModels)
         #expect(!reloaded.autoInsertText)
         #expect(reloaded.preferredLocale.identifier(.bcp47) == "lt-LT")
+        #expect(reloaded.customWords == ["Axiomorix", "Foundation Models"])
     }
 
     @Test func invalidPersistedRecordingModeFallsBackToToggle() {
@@ -45,5 +49,19 @@ struct AppSettingsTests {
 
         let settings = AppSettings(defaults: defaults)
         #expect(settings.recordingMode == .toggle)
+    }
+
+    @Test func customWordsAreNormalizedDeduplicatedAndRemovable() {
+        let defaults = makeDefaults()
+        defaults.set([" Axiomorix ", "axiomorix", "", "Foundation\nModels"], forKey: "customWords")
+        let settings = AppSettings(defaults: defaults)
+
+        #expect(settings.customWords == ["Axiomorix", "Foundation Models"])
+        #expect(!settings.addCustomWord("AXIOMORIX"))
+        #expect(!settings.addCustomWord("  \n "))
+
+        settings.removeCustomWord("Axiomorix")
+        #expect(settings.customWords == ["Foundation Models"])
+        #expect(AppSettings(defaults: defaults).customWords == ["Foundation Models"])
     }
 }

@@ -379,6 +379,13 @@ final class AppState {
                 processed = try await foundationModelsService.correctGrammar(processed)
             }
 
+            if !settings.customWords.isEmpty {
+                processed = try await foundationModelsService.correctCustomWords(
+                    processed,
+                    customWords: settings.customWords
+                )
+            }
+
             finalizedTranscript = processed
             return processed
         } catch {

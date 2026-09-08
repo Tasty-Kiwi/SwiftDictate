@@ -69,13 +69,19 @@ final class AppWindowController {
             return
         }
 
+        let contentSize = NSSize(width: 500, height: 450)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: contentSize),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
         let viewController = NSHostingController(
             rootView: SettingsView().environment(appState)
         )
-        let window = NSWindow(contentViewController: viewController)
+        viewController.view.frame = NSRect(origin: .zero, size: contentSize)
+        window.contentViewController = viewController
         window.title = "SwiftDictate Settings"
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 480, height: 380))
         window.center()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
