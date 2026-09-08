@@ -15,6 +15,11 @@ struct RecordingStateTests {
         #expect(MenuBarActivity.none.microphoneSymbolName == "mic")
         #expect(MenuBarActivity.recording.microphoneSymbolName == "mic.fill")
         #expect(MenuBarActivity.processing.microphoneSymbolName == "mic.fill")
+        #expect(MenuBarActivity.recording.accessibilityDescription == "SwiftDictate recording")
+        #expect(MenuBarActivity.processing.accessibilityDescription == "SwiftDictate processing")
+        #expect(MenuBarActivity.none.tint == .primary)
+        #expect(MenuBarActivity.recording.tint == .red)
+        #expect(MenuBarActivity.processing.tint == .yellow)
     }
 }
 

@@ -80,7 +80,13 @@ final class FoundationModelsService {
         providerPreference: IntelligenceProviderPreference
     ) async throws -> String {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return text }
-        guard options.requiresModelProcessing else { return text }
+        guard options.requiresProcessing else { return text }
+
+        guard options.requiresModelProcessing else {
+            return options.programmingDirectivesEnabled
+                ? ProgrammingDirectiveProcessor.process(text)
+                : text
+        }
 
         let prompt = Self.transcriptProcessingPrompt(text: text, options: options)
 
@@ -88,14 +94,20 @@ final class FoundationModelsService {
            providerPreference == .privateCloudPreferred,
            privateCloudStatus.isAvailable {
             do {
-                return try await performGeneration(prompt, using: .privateCloudCompute)
+                let result = try await performGeneration(prompt, using: .privateCloudCompute)
+                return options.programmingDirectivesEnabled
+                    ? ProgrammingDirectiveProcessor.process(result)
+                    : result
             } catch let error as FoundationModelsError where Self.shouldFallBackToOnDevice(after: error) {
                 logger.warning("Private Cloud Compute failed; retrying on device: \(String(describing: error))")
                 resetPrivateCloudSession()
             }
         }
 
-        return try await performGeneration(prompt, using: .onDevice)
+        let result = try await performGeneration(prompt, using: .onDevice)
+        return options.programmingDirectivesEnabled
+            ? ProgrammingDirectiveProcessor.process(result)
+            : result
     }
 
     static func transcriptProcessingPrompt(
@@ -122,8 +134,7 @@ final class FoundationModelsService {
         }
         if options.programmingDirectivesEnabled {
             rules.append(
-                "Interpret clear spoken commands of the form 'camel case …' or 'snake case …' as inline programming-format directives. Infer the intended identifier boundary from the surrounding sentence, remove the directive words, and convert only that identifier to lowerCamelCase or lower_snake_case. Preserve existing identifiers. Do not transform literal discussion about camel case or snake case that is not a command. Use these examples as the behavioral contract:\n"
-                    + Self.programmingDirectiveExamples
+                "Preserve spoken 'camel case …' and 'snake case …' phrases verbatim. Do not execute, remove, or rewrite those directives; a deterministic postprocessor applies them after this response."
             )
         }
 
@@ -322,9 +333,11 @@ final class FoundationModelsService {
         """
 
     static let programmingDirectiveExamples = """
-        - "camel case user account" becomes "userAccount".
-        - "assign snake case user account before returning" becomes "assign user_account before returning".
-        - "call camel case fetch user, then return" becomes "call fetchUser, then return".
+        - "camel case account record" becomes "accountRecord".
+        - "assign snake case request status before returning" becomes "assign request_status before returning".
+        - "call camel case fetch profile, then return" becomes "call fetchProfile, then return".
+        - "Create a variable named snake case current display name and pass it to the function." becomes "Create a variable named current_display_name and pass it to the function." The surrounding sentence must not be removed.
+        - "Send camel case customer account to the API after validation." becomes "Send customerAccount to the API after validation." The prefix and suffix must remain.
         - "keep existingIdentifier unchanged" remains unchanged.
         - After dictionary correction, "snake case Agents SDK client" becomes "agents_sdk_client".
         - "camel case is common in Swift" remains unchanged because it discusses casing rather than commanding a conversion.

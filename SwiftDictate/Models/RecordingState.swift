@@ -62,4 +62,26 @@ enum MenuBarActivity: Equatable {
         case .recording, .processing: "mic.fill"
         }
     }
+
+    var accessibilityDescription: String {
+        switch self {
+        case .none: "SwiftDictate ready"
+        case .recording: "SwiftDictate recording"
+        case .processing: "SwiftDictate processing"
+        }
+    }
+
+    var tint: MenuBarActivityTint {
+        switch self {
+        case .none: .primary
+        case .recording: .red
+        case .processing: .yellow
+        }
+    }
+}
+
+enum MenuBarActivityTint: Equatable {
+    case primary
+    case red
+    case yellow
 }

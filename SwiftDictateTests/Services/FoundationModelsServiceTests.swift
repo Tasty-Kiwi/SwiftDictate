@@ -49,7 +49,7 @@ struct FoundationModelsServiceTests {
         let punctuation = prompt.range(of: "Restore appropriate punctuation")
         let grammar = prompt.range(of: "Correct clear grammar errors")
         let dictionary = prompt.range(of: "Correct likely phonetic")
-        let programming = prompt.range(of: "Interpret clear spoken commands")
+        let programming = prompt.range(of: "Preserve spoken 'camel case")
 
         #expect(cleanup != nil)
         #expect(punctuation != nil)
@@ -87,19 +87,16 @@ struct FoundationModelsServiceTests {
             options: options(programming: true)
         )
 
-        #expect(prompt.contains("lowerCamelCase"))
-        #expect(prompt.contains("lower_snake_case"))
-        #expect(prompt.contains("Infer the intended identifier boundary"))
-        #expect(prompt.contains("Do not transform literal discussion"))
-        #expect(prompt.contains("Preserve existing identifiers"))
+        #expect(prompt.contains("Preserve spoken 'camel case …' and 'snake case …' phrases verbatim"))
+        #expect(prompt.contains("deterministic postprocessor"))
     }
 
     @Test func programmingDirectiveEvaluationCorpusCoversRequiredScenarios() {
         let examples = FoundationModelsService.programmingDirectiveExamples
 
-        #expect(examples.contains("camel case user account"))
-        #expect(examples.contains("assign snake case user account before returning"))
-        #expect(examples.contains("call camel case fetch user, then return"))
+        #expect(examples.contains("camel case account record"))
+        #expect(examples.contains("assign snake case request status before returning"))
+        #expect(examples.contains("call camel case fetch profile, then return"))
         #expect(examples.contains("existingIdentifier"))
         #expect(examples.contains("Agents SDK client"))
         #expect(examples.contains("discusses casing rather than commanding"))
@@ -112,6 +109,22 @@ struct FoundationModelsServiceTests {
         )
 
         #expect(prompt.contains("[\"A \\\"quoted\\\" name\",\"line\\nbreak\"]"))
+    }
+
+    @Test func programmingOnlyProcessingBypassesTheFoundationModel() async throws {
+        let recorder = ProviderRecorder()
+        let service = FoundationModelsService { _, provider in
+            await recorder.record(provider)
+            return "model should not run"
+        }
+        let result = try await service.processTranscript(
+            "Please store snake case preferred display name before showing the profile.",
+            options: options(programming: true),
+            providerPreference: .onDevice
+        )
+
+        #expect(result == "Please store preferred_display_name before showing the profile.")
+        #expect(await recorder.recordedProviders().isEmpty)
     }
 
     @Test func privateCloudSuccessDoesNotInvokeOnDeviceModel() async throws {

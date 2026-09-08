@@ -59,11 +59,21 @@ final class PermissionsService {
     }
 
     func refreshAll() {
-        microphoneAuthorized = checkMicrophone()
-        accessibilityTrusted = checkAccessibilityTrust()
-        speechRecognitionAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
+        let microphoneAuthorized = checkMicrophone()
+        let accessibilityTrusted = checkAccessibilityTrust()
+        let speechRecognitionAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
 
-        logger.info("Permissions refreshed — mic:\(self.microphoneAuthorized) ax:\(self.accessibilityTrusted) speech:\(self.speechRecognitionAuthorized)")
+        let didChange = self.microphoneAuthorized != microphoneAuthorized
+            || self.accessibilityTrusted != accessibilityTrusted
+            || self.speechRecognitionAuthorized != speechRecognitionAuthorized
+
+        self.microphoneAuthorized = microphoneAuthorized
+        self.accessibilityTrusted = accessibilityTrusted
+        self.speechRecognitionAuthorized = speechRecognitionAuthorized
+
+        if didChange {
+            logger.info("Permissions refreshed — mic:\(microphoneAuthorized) ax:\(accessibilityTrusted) speech:\(speechRecognitionAuthorized)")
+        }
     }
 
     private func checkMicrophone() -> Bool {

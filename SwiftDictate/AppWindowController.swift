@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class AppWindowController {
+final class AppWindowController: NSObject, NSWindowDelegate {
     private var onboardingWindow: NSWindow?
     private var overlayWindow: NSWindow?
     private var settingsWindow: NSWindow?
@@ -79,14 +79,23 @@ final class AppWindowController {
         let viewController = NSHostingController(
             rootView: SettingsView().environment(appState)
         )
-        viewController.view.frame = NSRect(origin: .zero, size: contentSize)
         window.contentViewController = viewController
         window.title = "SwiftDictate Settings"
+        window.isReleasedWhenClosed = false
+        window.delegate = self
         window.center()
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
         settingsWindow = window
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === settingsWindow else {
+            return
+        }
+        settingsWindow = nil
     }
 }
 

@@ -13,9 +13,12 @@ struct TranscriptProcessingOptions: Equatable, Sendable {
             smartCleanupEnabled
                 || punctuationRestorationEnabled
                 || grammarCorrectionEnabled
-                || programmingDirectivesEnabled
                 || !customWords.isEmpty
         )
+    }
+
+    var requiresProcessing: Bool {
+        requiresModelProcessing || programmingDirectivesEnabled
     }
 }
 

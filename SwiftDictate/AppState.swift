@@ -23,7 +23,7 @@ final class AppState {
     private var recordingTask: Task<Void, Never>?
     private var resultCollectionTask: Task<Void, Never>?
     private var audioStream: AsyncStream<CapturedAudioBuffer>?
-    private var workspaceObserver: (any NSObjectProtocol)?
+    private var activationObserver: (any NSObjectProtocol)?
     private var setupTask: Task<Void, Never>?
     private var insertionTargetApplication: NSRunningApplication?
     private var recordingSessionID = UUID()
@@ -37,8 +37,8 @@ final class AppState {
 
     deinit {
         MainActor.assumeIsolated {
-            if let observer = workspaceObserver {
-                NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            if let observer = activationObserver {
+                NotificationCenter.default.removeObserver(observer)
             }
         }
     }
@@ -54,13 +54,13 @@ final class AppState {
         permissionsService.refreshAll()
         foundationModelsService.checkAvailability()
 
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification,
+        activationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self else { return }
+                guard let self, !self.hasRequiredPermissions else { return }
                 await self.refreshPermissionsAndUpdateState()
             }
         }
@@ -83,13 +83,16 @@ final class AppState {
     /// while the user responds to the Accessibility system prompt.
     func requestRequiredPermissions() async {
         await permissionsService.requestRequiredPermissions()
-        await refreshPermissionsAndUpdateState()
+        await updateStateAfterPermissionRefresh()
     }
 
     /// Refreshes permission state after the app becomes active again from System Settings.
     func refreshPermissionsAndUpdateState() async {
         permissionsService.refreshAll()
+        await updateStateAfterPermissionRefresh()
+    }
 
+    private func updateStateAfterPermissionRefresh() async {
         guard hasRequiredPermissions else {
             if !isRecording && !recordingState.isProcessing {
                 recordingState = .requestingPermissions
@@ -370,7 +373,7 @@ final class AppState {
             return text
         }
 
-        guard options.requiresModelProcessing else {
+        guard options.requiresProcessing else {
             return text
         }
 

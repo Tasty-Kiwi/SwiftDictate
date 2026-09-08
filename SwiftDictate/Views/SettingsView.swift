@@ -11,14 +11,8 @@ struct SettingsView: View {
 
             Divider()
 
-            ZStack {
-                tabPage(generalSettings, for: .general)
-                tabPage(recordingSettings, for: .recording)
-                tabPage(processingSettings, for: .processing)
-                tabPage(dictionarySettings, for: .dictionary)
-                tabPage(aboutTab, for: .about)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            selectedTabContent
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 500, height: 450)
     }
@@ -62,11 +56,15 @@ struct SettingsView: View {
         .background(.bar)
     }
 
-    private func tabPage<Content: View>(_ content: Content, for tab: SettingsTab) -> some View {
-        content
-            .opacity(selectedTab == tab ? 1 : 0)
-            .allowsHitTesting(selectedTab == tab)
-            .accessibilityHidden(selectedTab != tab)
+    @ViewBuilder
+    private var selectedTabContent: some View {
+        switch selectedTab {
+        case .general: generalSettings
+        case .recording: recordingSettings
+        case .processing: processingSettings
+        case .dictionary: dictionarySettings
+        case .about: aboutTab
+        }
     }
 
     private var generalSettings: some View {
@@ -142,7 +140,6 @@ struct SettingsView: View {
                     .disabled(!appState.settings.enableFoundationModels || !fmAvailable)
 
                 Toggle("Programming Directives", isOn: programmingDirectivesBinding)
-                    .disabled(!appState.settings.enableFoundationModels || !fmAvailable)
 
                 if appState.settings.enableProgrammingDirectives {
                     Text("Say “camel case user account” for userAccount or “snake case user account” for user_account.")
