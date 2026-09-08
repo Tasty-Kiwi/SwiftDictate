@@ -10,11 +10,13 @@ struct SwiftDictateApp: App {
             MenuBarView()
                 .environment(appState)
         } label: {
-            if appState.isRecording {
-                Image(systemName: "mic.fill")
-            } else {
-                Image(systemName: "mic")
-            }
+            let activity = appState.recordingState.menuBarActivity
+            Image(systemName: activity.microphoneSymbolName)
+                .foregroundStyle(
+                    activity == .recording ? .red : activity == .processing ? .yellow : .primary
+                )
+                .symbolRenderingMode(.monochrome)
+                .accessibilityLabel(appState.recordingState.displayName)
         }
         .menuBarExtraStyle(.window)
     }

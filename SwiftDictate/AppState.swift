@@ -252,6 +252,8 @@ final class AppState {
         guard isRecording else { return }
         let sessionID = recordingSessionID
         let shouldFinalizeResults = hasCapturedAudio
+        let processingOptions = settings.transcriptProcessingOptions
+        let providerPreference = settings.intelligenceProviderPreference
 
         recordingState = .processing
         recordingStartedAt = nil
@@ -291,7 +293,11 @@ final class AppState {
                 return
             }
 
-            let transcriptForInsertion = await processTranscriptIfNeeded(finalizedTranscript)
+            let transcriptForInsertion = await processTranscriptIfNeeded(
+                finalizedTranscript,
+                options: processingOptions,
+                providerPreference: providerPreference
+            )
             guard recordingSessionID == sessionID else { return }
 
             if settings.autoInsertText, !transcriptForInsertion.isEmpty {
@@ -355,36 +361,25 @@ final class AppState {
         }
     }
 
-    private func processTranscriptIfNeeded(_ text: String) async -> String {
+    private func processTranscriptIfNeeded(
+        _ text: String,
+        options: TranscriptProcessingOptions,
+        providerPreference: IntelligenceProviderPreference
+    ) async -> String {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return text
         }
 
-        guard settings.enableFoundationModels, foundationModelsService.isAvailable else {
+        guard options.requiresModelProcessing else {
             return text
         }
 
         do {
-            var processed = text
-
-            if settings.enableSmartCleanup {
-                processed = try await foundationModelsService.cleanupTranscript(processed)
-            }
-
-            if settings.enablePunctuationRestoration {
-                processed = try await foundationModelsService.restorePunctuation(processed)
-            }
-
-            if settings.enableGrammarCorrection {
-                processed = try await foundationModelsService.correctGrammar(processed)
-            }
-
-            if !settings.customWords.isEmpty {
-                processed = try await foundationModelsService.correctCustomWords(
-                    processed,
-                    customWords: settings.customWords
-                )
-            }
+            let processed = try await foundationModelsService.processTranscript(
+                text,
+                options: options,
+                providerPreference: providerPreference
+            )
 
             finalizedTranscript = processed
             return processed

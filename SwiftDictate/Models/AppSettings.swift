@@ -25,6 +25,12 @@ final class AppSettings {
     var enableSmartCleanup: Bool {
         didSet { defaults.set(enableSmartCleanup, forKey: Keys.enableSmartCleanup) }
     }
+    var enableProgrammingDirectives: Bool {
+        didSet { defaults.set(enableProgrammingDirectives, forKey: Keys.enableProgrammingDirectives) }
+    }
+    var usePrivateCloudCompute: Bool {
+        didSet { defaults.set(usePrivateCloudCompute, forKey: Keys.usePrivateCloudCompute) }
+    }
     var preferredLocaleIdentifier: String {
         didSet { defaults.set(preferredLocaleIdentifier, forKey: Keys.preferredLocaleIdentifier) }
     }
@@ -39,6 +45,23 @@ final class AppSettings {
 
     var preferredLocale: Locale {
         Locale(identifier: preferredLocaleIdentifier)
+    }
+
+    var intelligenceProviderPreference: IntelligenceProviderPreference {
+        FeatureFlags.privateCloudCompute && usePrivateCloudCompute
+            ? .privateCloudPreferred
+            : .onDevice
+    }
+
+    var transcriptProcessingOptions: TranscriptProcessingOptions {
+        TranscriptProcessingOptions(
+            foundationModelsEnabled: enableFoundationModels,
+            smartCleanupEnabled: enableSmartCleanup,
+            punctuationRestorationEnabled: enablePunctuationRestoration,
+            grammarCorrectionEnabled: enableGrammarCorrection,
+            programmingDirectivesEnabled: enableProgrammingDirectives,
+            customWords: customWords
+        )
     }
 
     init(defaults: UserDefaults = .standard, locale: Locale = .current) {
@@ -59,6 +82,10 @@ final class AppSettings {
             as? Bool ?? Defaults.restoreClipboardAfterPaste
         self.enableSmartCleanup = defaults.object(forKey: Keys.enableSmartCleanup)
             as? Bool ?? Defaults.enableSmartCleanup
+        self.enableProgrammingDirectives = defaults.object(forKey: Keys.enableProgrammingDirectives)
+            as? Bool ?? Defaults.enableProgrammingDirectives
+        self.usePrivateCloudCompute = defaults.object(forKey: Keys.usePrivateCloudCompute)
+            as? Bool ?? Defaults.usePrivateCloudCompute
         self.preferredLocaleIdentifier = defaults.string(forKey: Keys.preferredLocaleIdentifier)
             ?? Defaults.preferredLocaleIdentifier(for: locale)
         self.customWords = Self.normalizedCustomWords(
@@ -87,6 +114,8 @@ final class AppSettings {
         static let enablePunctuationRestoration = "enablePunctuationRestoration"
         static let enableGrammarCorrection = "enableGrammarCorrection"
         static let enableSmartCleanup = "enableSmartCleanup"
+        static let enableProgrammingDirectives = "enableProgrammingDirectives"
+        static let usePrivateCloudCompute = "usePrivateCloudCompute"
         static let autoInsertText = "autoInsertText"
         // Keep the persisted key for compatibility with existing installations.
         static let restoreClipboardAfterPaste = "clearClipboardAfterPaste"
@@ -100,6 +129,8 @@ final class AppSettings {
         static let enablePunctuationRestoration = true
         static let enableGrammarCorrection = true
         static let enableSmartCleanup = true
+        static let enableProgrammingDirectives = false
+        static let usePrivateCloudCompute = false
         static let autoInsertText = true
         static let restoreClipboardAfterPaste = true
 
@@ -114,6 +145,8 @@ final class AppSettings {
                 Keys.enablePunctuationRestoration: enablePunctuationRestoration,
                 Keys.enableGrammarCorrection: enableGrammarCorrection,
                 Keys.enableSmartCleanup: enableSmartCleanup,
+                Keys.enableProgrammingDirectives: enableProgrammingDirectives,
+                Keys.usePrivateCloudCompute: usePrivateCloudCompute,
                 Keys.autoInsertText: autoInsertText,
                 Keys.restoreClipboardAfterPaste: restoreClipboardAfterPaste,
                 Keys.preferredLocaleIdentifier: preferredLocaleIdentifier(for: locale),

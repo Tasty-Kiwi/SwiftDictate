@@ -41,4 +41,25 @@ enum RecordingState {
         }
         return false
     }
+
+    var menuBarActivity: MenuBarActivity {
+        switch self {
+        case .recording: .recording
+        case .processing: .processing
+        default: .none
+        }
+    }
+}
+
+enum MenuBarActivity: Equatable {
+    case none
+    case recording
+    case processing
+
+    var microphoneSymbolName: String {
+        switch self {
+        case .none: "mic"
+        case .recording, .processing: "mic.fill"
+        }
+    }
 }

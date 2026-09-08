@@ -141,6 +141,15 @@ struct SettingsView: View {
                 Toggle("Smart Cleanup", isOn: smartCleanupBinding)
                     .disabled(!appState.settings.enableFoundationModels || !fmAvailable)
 
+                Toggle("Programming Directives", isOn: programmingDirectivesBinding)
+                    .disabled(!appState.settings.enableFoundationModels || !fmAvailable)
+
+                if appState.settings.enableProgrammingDirectives {
+                    Text("Say “camel case user account” for userAccount or “snake case user account” for user_account.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 if !fmAvailable {
                     Label(
                         "Apple Intelligence is not available on this device or is disabled in System Settings.",
@@ -148,6 +157,24 @@ struct SettingsView: View {
                     )
                     .font(.caption)
                     .foregroundStyle(.orange)
+                }
+            }
+
+            if FeatureFlags.privateCloudCompute {
+                Section("Private Cloud Compute") {
+                    Toggle(
+                        "Use Private Cloud Compute when available",
+                        isOn: privateCloudComputeBinding
+                    )
+                    .disabled(!appState.foundationModelsService.privateCloudStatus.isAvailable)
+
+                    Text(appState.foundationModelsService.privateCloudStatus.explanation)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Text("Requires an internet connection. If Apple’s service, quota, or network is unavailable, processing automatically retries on this Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -279,6 +306,20 @@ struct SettingsView: View {
         Binding(
             get: { appState.settings.enableSmartCleanup },
             set: { appState.settings.enableSmartCleanup = $0 }
+        )
+    }
+
+    private var programmingDirectivesBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.enableProgrammingDirectives },
+            set: { appState.settings.enableProgrammingDirectives = $0 }
+        )
+    }
+
+    private var privateCloudComputeBinding: Binding<Bool> {
+        Binding(
+            get: { appState.settings.usePrivateCloudCompute },
+            set: { appState.settings.usePrivateCloudCompute = $0 }
         )
     }
 

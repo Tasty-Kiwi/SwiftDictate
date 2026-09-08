@@ -18,6 +18,9 @@ struct AppSettingsTests {
         #expect(settings.enablePunctuationRestoration)
         #expect(settings.enableGrammarCorrection)
         #expect(settings.enableSmartCleanup)
+        #expect(!settings.enableProgrammingDirectives)
+        #expect(!settings.usePrivateCloudCompute)
+        #expect(settings.intelligenceProviderPreference == .onDevice)
         #expect(settings.autoInsertText)
         #expect(settings.restoreClipboardAfterPaste)
         #expect(settings.preferredLocale.identifier(.bcp47) == "en-GB")
@@ -31,6 +34,8 @@ struct AppSettingsTests {
         settings.recordingMode = .pushToTalk
         settings.enableFoundationModels = false
         settings.autoInsertText = false
+        settings.enableProgrammingDirectives = true
+        settings.usePrivateCloudCompute = true
         settings.preferredLocaleIdentifier = "lt-LT"
         #expect(settings.addCustomWord("  Axiomorix  "))
         #expect(settings.addCustomWord("Foundation Models"))
@@ -39,8 +44,40 @@ struct AppSettingsTests {
         #expect(reloaded.recordingMode == .pushToTalk)
         #expect(!reloaded.enableFoundationModels)
         #expect(!reloaded.autoInsertText)
+        #expect(reloaded.enableProgrammingDirectives)
+        #expect(reloaded.usePrivateCloudCompute)
+        #expect(reloaded.intelligenceProviderPreference == .onDevice)
         #expect(reloaded.preferredLocale.identifier(.bcp47) == "lt-LT")
         #expect(reloaded.customWords == ["Axiomorix", "Foundation Models"])
+    }
+
+    @Test func privateCloudFeatureIsDisabledForStandardBuilds() {
+        #expect(!FeatureFlags.privateCloudCompute)
+
+        let settings = AppSettings(defaults: makeDefaults())
+        settings.usePrivateCloudCompute = true
+        #expect(settings.intelligenceProviderPreference == .onDevice)
+    }
+
+    @Test func processingOptionsAreCapturedFromCurrentSettings() {
+        let settings = AppSettings(defaults: makeDefaults())
+        settings.enableFoundationModels = true
+        settings.enableSmartCleanup = false
+        settings.enablePunctuationRestoration = true
+        settings.enableGrammarCorrection = false
+        settings.enableProgrammingDirectives = true
+        #expect(settings.addCustomWord("Axiomorix"))
+
+        #expect(
+            settings.transcriptProcessingOptions == TranscriptProcessingOptions(
+                foundationModelsEnabled: true,
+                smartCleanupEnabled: false,
+                punctuationRestorationEnabled: true,
+                grammarCorrectionEnabled: false,
+                programmingDirectivesEnabled: true,
+                customWords: ["Axiomorix"]
+            )
+        )
     }
 
     @Test func invalidPersistedRecordingModeFallsBackToToggle() {
