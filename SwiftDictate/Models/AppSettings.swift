@@ -31,6 +31,9 @@ final class AppSettings {
     var usePrivateCloudCompute: Bool {
         didSet { defaults.set(usePrivateCloudCompute, forKey: Keys.usePrivateCloudCompute) }
     }
+    var additionalSystemInstructions: String {
+        didSet { defaults.set(additionalSystemInstructions, forKey: Keys.additionalSystemInstructions) }
+    }
     var preferredLocaleIdentifier: String {
         didSet { defaults.set(preferredLocaleIdentifier, forKey: Keys.preferredLocaleIdentifier) }
     }
@@ -60,6 +63,7 @@ final class AppSettings {
             punctuationRestorationEnabled: enablePunctuationRestoration,
             grammarCorrectionEnabled: enableGrammarCorrection,
             programmingDirectivesEnabled: enableProgrammingDirectives,
+            additionalSystemInstructions: additionalSystemInstructions,
             customWords: customWords
         )
     }
@@ -86,6 +90,8 @@ final class AppSettings {
             as? Bool ?? Defaults.enableProgrammingDirectives
         self.usePrivateCloudCompute = defaults.object(forKey: Keys.usePrivateCloudCompute)
             as? Bool ?? Defaults.usePrivateCloudCompute
+        self.additionalSystemInstructions = defaults.string(forKey: Keys.additionalSystemInstructions)
+            ?? Defaults.additionalSystemInstructions
         self.preferredLocaleIdentifier = defaults.string(forKey: Keys.preferredLocaleIdentifier)
             ?? Defaults.preferredLocaleIdentifier(for: locale)
         self.customWords = Self.normalizedCustomWords(
@@ -116,6 +122,7 @@ final class AppSettings {
         static let enableSmartCleanup = "enableSmartCleanup"
         static let enableProgrammingDirectives = "enableProgrammingDirectives"
         static let usePrivateCloudCompute = "usePrivateCloudCompute"
+        static let additionalSystemInstructions = "additionalSystemInstructions"
         static let autoInsertText = "autoInsertText"
         // Keep the persisted key for compatibility with existing installations.
         static let restoreClipboardAfterPaste = "clearClipboardAfterPaste"
@@ -131,6 +138,7 @@ final class AppSettings {
         static let enableSmartCleanup = true
         static let enableProgrammingDirectives = false
         static let usePrivateCloudCompute = false
+        static let additionalSystemInstructions = ""
         static let autoInsertText = true
         static let restoreClipboardAfterPaste = true
 
@@ -147,6 +155,7 @@ final class AppSettings {
                 Keys.enableSmartCleanup: enableSmartCleanup,
                 Keys.enableProgrammingDirectives: enableProgrammingDirectives,
                 Keys.usePrivateCloudCompute: usePrivateCloudCompute,
+                Keys.additionalSystemInstructions: additionalSystemInstructions,
                 Keys.autoInsertText: autoInsertText,
                 Keys.restoreClipboardAfterPaste: restoreClipboardAfterPaste,
                 Keys.preferredLocaleIdentifier: preferredLocaleIdentifier(for: locale),

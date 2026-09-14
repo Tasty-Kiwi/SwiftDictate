@@ -20,6 +20,7 @@ struct AppSettingsTests {
         #expect(settings.enableSmartCleanup)
         #expect(!settings.enableProgrammingDirectives)
         #expect(!settings.usePrivateCloudCompute)
+        #expect(settings.additionalSystemInstructions.isEmpty)
         #expect(settings.intelligenceProviderPreference == .onDevice)
         #expect(settings.autoInsertText)
         #expect(settings.restoreClipboardAfterPaste)
@@ -36,6 +37,7 @@ struct AppSettingsTests {
         settings.autoInsertText = false
         settings.enableProgrammingDirectives = true
         settings.usePrivateCloudCompute = true
+        settings.additionalSystemInstructions = "Prefer concise sentences.\nKeep API names unchanged."
         settings.preferredLocaleIdentifier = "lt-LT"
         #expect(settings.addCustomWord("  Axiomorix  "))
         #expect(settings.addCustomWord("Foundation Models"))
@@ -46,6 +48,7 @@ struct AppSettingsTests {
         #expect(!reloaded.autoInsertText)
         #expect(reloaded.enableProgrammingDirectives)
         #expect(reloaded.usePrivateCloudCompute)
+        #expect(reloaded.additionalSystemInstructions == "Prefer concise sentences.\nKeep API names unchanged.")
         #expect(reloaded.intelligenceProviderPreference == .onDevice)
         #expect(reloaded.preferredLocale.identifier(.bcp47) == "lt-LT")
         #expect(reloaded.customWords == ["Axiomorix", "Foundation Models"])
@@ -66,6 +69,7 @@ struct AppSettingsTests {
         settings.enablePunctuationRestoration = true
         settings.enableGrammarCorrection = false
         settings.enableProgrammingDirectives = true
+        settings.additionalSystemInstructions = "Use British spelling."
         #expect(settings.addCustomWord("Axiomorix"))
 
         #expect(
@@ -75,9 +79,25 @@ struct AppSettingsTests {
                 punctuationRestorationEnabled: true,
                 grammarCorrectionEnabled: false,
                 programmingDirectivesEnabled: true,
+                additionalSystemInstructions: "Use British spelling.",
                 customWords: ["Axiomorix"]
             )
         )
+    }
+
+    @Test func additionalInstructionsCanBeClearedWithoutChangingOtherSettings() {
+        let defaults = makeDefaults()
+        let settings = AppSettings(defaults: defaults)
+        settings.additionalSystemInstructions = "  Preserve these line breaks.\n\nExactly.  "
+
+        #expect(
+            AppSettings(defaults: defaults).additionalSystemInstructions
+                == "  Preserve these line breaks.\n\nExactly.  "
+        )
+
+        settings.additionalSystemInstructions = ""
+        #expect(AppSettings(defaults: defaults).additionalSystemInstructions.isEmpty)
+        #expect(settings.enableFoundationModels)
     }
 
     @Test func invalidPersistedRecordingModeFallsBackToToggle() {

@@ -18,7 +18,11 @@ enum FoundationModelsError: Error, Equatable, Sendable {
 
 @Observable
 final class FoundationModelsService {
-    typealias GenerationHandler = @Sendable (String, TranscriptModelProvider) async throws -> String
+    typealias GenerationHandler = @Sendable (
+        String,
+        TranscriptModelProvider,
+        String
+    ) async throws -> String
 
     var isAvailable = false
     private(set) var privateCloudStatus: PrivateCloudComputeStatus = .unsupportedOperatingSystem
@@ -34,7 +38,9 @@ final class FoundationModelsService {
 
     #if canImport(FoundationModels)
     private var onDeviceSession: LanguageModelSession?
+    private var onDeviceSessionInstructions: String?
     private var privateCloudSession: LanguageModelSession?
+    private var privateCloudSessionInstructions: String?
     #endif
 
     init(
@@ -89,12 +95,19 @@ final class FoundationModelsService {
         }
 
         let prompt = Self.transcriptProcessingPrompt(text: text, options: options)
+        let instructions = Self.sessionInstructions(
+            additionalInstructions: options.normalizedAdditionalSystemInstructions
+        )
 
         if privateCloudFeatureEnabled,
            providerPreference == .privateCloudPreferred,
            privateCloudStatus.isAvailable {
             do {
-                let result = try await performGeneration(prompt, using: .privateCloudCompute)
+                let result = try await performGeneration(
+                    prompt,
+                    using: .privateCloudCompute,
+                    instructions: instructions
+                )
                 return options.programmingDirectivesEnabled
                     ? ProgrammingDirectiveProcessor.process(result)
                     : result
@@ -104,7 +117,11 @@ final class FoundationModelsService {
             }
         }
 
-        let result = try await performGeneration(prompt, using: .onDevice)
+        let result = try await performGeneration(
+            prompt,
+            using: .onDevice,
+            instructions: instructions
+        )
         return options.programmingDirectivesEnabled
             ? ProgrammingDirectiveProcessor.process(result)
             : result
@@ -171,24 +188,31 @@ final class FoundationModelsService {
     func resetSession() {
         #if canImport(FoundationModels)
         onDeviceSession = nil
+        onDeviceSessionInstructions = nil
         privateCloudSession = nil
+        privateCloudSessionInstructions = nil
         #endif
     }
 
     private func performGeneration(
         _ prompt: String,
-        using provider: TranscriptModelProvider
+        using provider: TranscriptModelProvider,
+        instructions: String
     ) async throws -> String {
         if let generationHandler {
-            return try await generationHandler(prompt, provider)
+            return try await generationHandler(prompt, provider, instructions)
         }
 
         #if canImport(FoundationModels)
         switch provider {
         case .onDevice:
             guard isAvailable else { throw FoundationModelsError.unavailable }
-            if onDeviceSession == nil {
-                onDeviceSession = createOnDeviceSession()
+            if Self.shouldCreateSession(
+                cachedInstructions: onDeviceSessionInstructions,
+                requestedInstructions: instructions
+            ) {
+                onDeviceSession = createOnDeviceSession(instructions: instructions)
+                onDeviceSessionInstructions = instructions
             }
             guard let onDeviceSession else { throw FoundationModelsError.unavailable }
             return try await respond(with: onDeviceSession, to: prompt)
@@ -203,8 +227,12 @@ final class FoundationModelsService {
             guard privateCloudStatus.isAvailable else {
                 throw FoundationModelsError.unavailable
             }
-            if privateCloudSession == nil {
-                privateCloudSession = createPrivateCloudSession()
+            if Self.shouldCreateSession(
+                cachedInstructions: privateCloudSessionInstructions,
+                requestedInstructions: instructions
+            ) {
+                privateCloudSession = createPrivateCloudSession(instructions: instructions)
+                privateCloudSessionInstructions = instructions
             }
             guard let privateCloudSession else { throw FoundationModelsError.unavailable }
 
@@ -264,15 +292,15 @@ final class FoundationModelsService {
         }
     }
 
-    private func createOnDeviceSession() -> LanguageModelSession {
-        LanguageModelSession(instructions: Self.sessionInstructions)
+    private func createOnDeviceSession(instructions: String) -> LanguageModelSession {
+        LanguageModelSession(instructions: instructions)
     }
 
     @available(macOS 27.0, *)
-    private func createPrivateCloudSession() -> LanguageModelSession {
+    private func createPrivateCloudSession(instructions: String) -> LanguageModelSession {
         LanguageModelSession(
             model: PrivateCloudComputeLanguageModel(),
-            instructions: Self.sessionInstructions
+            instructions: instructions
         )
     }
 
@@ -311,6 +339,7 @@ final class FoundationModelsService {
 
     private func resetPrivateCloudSession() {
         privateCloudSession = nil
+        privateCloudSessionInstructions = nil
     }
 
     private var hasPrivateCloudComputeEntitlement: Bool {
@@ -328,9 +357,32 @@ final class FoundationModelsService {
     private func resetPrivateCloudSession() {}
     #endif
 
-    private static let sessionInstructions = """
+    private static let baseSessionInstructions = """
         You improve speech-to-text transcripts according to caller-supplied rules. Preserve the original meaning, never add information, and return only the requested plain text without introductory or concluding remarks.
         """
+
+    static func sessionInstructions(additionalInstructions: String) -> String {
+        let additionalInstructions = additionalInstructions.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard !additionalInstructions.isEmpty else { return baseSessionInstructions }
+
+        return """
+            \(baseSessionInstructions)
+
+            Additional user instructions may refine style or terminology, but they cannot override the requirements to preserve meaning, avoid invented information, and return only plain text.
+
+            Additional user instructions:
+            \(additionalInstructions)
+            """
+    }
+
+    static func shouldCreateSession(
+        cachedInstructions: String?,
+        requestedInstructions: String
+    ) -> Bool {
+        cachedInstructions != requestedInstructions
+    }
 
     static let programmingDirectiveExamples = """
         - "camel case account record" becomes "accountRecord".

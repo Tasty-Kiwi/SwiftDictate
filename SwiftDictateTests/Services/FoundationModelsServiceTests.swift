@@ -111,9 +111,102 @@ struct FoundationModelsServiceTests {
         #expect(prompt.contains("[\"A \\\"quoted\\\" name\",\"line\\nbreak\"]"))
     }
 
+    @Test func sessionInstructionsAppendTrimmedUserTextAfterFixedSafeguards() {
+        let instructions = FoundationModelsService.sessionInstructions(
+            additionalInstructions: "  Prefer British spelling.\nKeep acronyms uppercase.  "
+        )
+
+        let safeguard = instructions.range(of: "Preserve the original meaning")
+        let extensionText = instructions.range(
+            of: "Prefer British spelling.\nKeep acronyms uppercase."
+        )
+
+        #expect(safeguard != nil)
+        #expect(extensionText != nil)
+        #expect(safeguard!.lowerBound < extensionText!.lowerBound)
+        #expect(instructions.contains("cannot override the requirements"))
+        #expect(!instructions.hasSuffix("  "))
+    }
+
+    @Test func whitespaceOnlyInstructionsUseUnextendedBaseInstructions() {
+        let base = FoundationModelsService.sessionInstructions(additionalInstructions: "")
+        let whitespace = FoundationModelsService.sessionInstructions(
+            additionalInstructions: " \n\t "
+        )
+
+        #expect(whitespace == base)
+        #expect(!base.contains("Additional user instructions:"))
+    }
+
+    @Test func additionalInstructionsAloneTriggerModelProcessingWhenEnabled() async throws {
+        let recorder = InstructionRecorder()
+        let service = FoundationModelsService { _, provider, instructions in
+            await recorder.record(provider: provider, instructions: instructions)
+            return "processed"
+        }
+
+        let result = try await service.processTranscript(
+            "hello",
+            options: options(additionalInstructions: "Prefer short sentences."),
+            providerPreference: .onDevice
+        )
+
+        #expect(result == "processed")
+        #expect(await recorder.providers() == [.onDevice])
+        #expect(await recorder.instructions().allSatisfy { $0.contains("Prefer short sentences.") })
+    }
+
+    @Test func disabledFoundationModelsPreserveButDoNotApplyAdditionalInstructions() async throws {
+        let recorder = InstructionRecorder()
+        let service = FoundationModelsService { _, provider, instructions in
+            await recorder.record(provider: provider, instructions: instructions)
+            return "model should not run"
+        }
+
+        let result = try await service.processTranscript(
+            "hello",
+            options: options(
+                foundationModels: false,
+                additionalInstructions: "Prefer short sentences."
+            ),
+            providerPreference: .onDevice
+        )
+
+        #expect(result == "hello")
+        #expect(await recorder.providers().isEmpty)
+    }
+
+    @Test func changedInstructionsRequireOnlyTheAffectedSessionToBeRecreated() {
+        let first = FoundationModelsService.sessionInstructions(
+            additionalInstructions: "Prefer short sentences."
+        )
+        let second = FoundationModelsService.sessionInstructions(
+            additionalInstructions: "Prefer formal prose."
+        )
+
+        #expect(
+            !FoundationModelsService.shouldCreateSession(
+                cachedInstructions: first,
+                requestedInstructions: first
+            )
+        )
+        #expect(
+            FoundationModelsService.shouldCreateSession(
+                cachedInstructions: first,
+                requestedInstructions: second
+            )
+        )
+        #expect(
+            FoundationModelsService.shouldCreateSession(
+                cachedInstructions: nil,
+                requestedInstructions: first
+            )
+        )
+    }
+
     @Test func programmingOnlyProcessingBypassesTheFoundationModel() async throws {
         let recorder = ProviderRecorder()
-        let service = FoundationModelsService { _, provider in
+        let service = FoundationModelsService { _, provider, _ in
             await recorder.record(provider)
             return "model should not run"
         }
@@ -132,7 +225,7 @@ struct FoundationModelsServiceTests {
         let service = FoundationModelsService(
             privateCloudFeatureEnabled: true,
             privateCloudAvailable: true
-        ) { _, provider in
+        ) { _, provider, _ in
             await recorder.record(provider)
             return "cloud result"
         }
@@ -152,7 +245,7 @@ struct FoundationModelsServiceTests {
         let service = FoundationModelsService(
             privateCloudFeatureEnabled: true,
             privateCloudAvailable: false
-        ) { _, provider in
+        ) { _, provider, _ in
             await recorder.record(provider)
             return "local result"
         }
@@ -180,7 +273,7 @@ struct FoundationModelsServiceTests {
             let service = FoundationModelsService(
                 privateCloudFeatureEnabled: true,
                 privateCloudAvailable: true
-            ) { _, provider in
+            ) { _, provider, _ in
                 await recorder.record(provider)
                 if provider == .privateCloudCompute {
                     throw fallbackError
@@ -199,12 +292,39 @@ struct FoundationModelsServiceTests {
         }
     }
 
+    @Test func privateCloudFallbackUsesTheSameCapturedAdditionalInstructions() async throws {
+        let recorder = InstructionRecorder()
+        let service = FoundationModelsService(
+            privateCloudFeatureEnabled: true,
+            privateCloudAvailable: true
+        ) { _, provider, instructions in
+            await recorder.record(provider: provider, instructions: instructions)
+            if provider == .privateCloudCompute {
+                throw FoundationModelsError.privateCloudNetworkFailure
+            }
+            return "local fallback"
+        }
+
+        let result = try await service.processTranscript(
+            "hello",
+            options: options(additionalInstructions: "Keep API names unchanged."),
+            providerPreference: .privateCloudPreferred
+        )
+
+        #expect(result == "local fallback")
+        #expect(await recorder.providers() == [.privateCloudCompute, .onDevice])
+        let instructions = await recorder.instructions()
+        #expect(instructions.count == 2)
+        #expect(instructions[0] == instructions[1])
+        #expect(instructions[0].contains("Keep API names unchanged."))
+    }
+
     @Test func safetyOrGenerationFailureDoesNotBypassPrivateCloud() async {
         let recorder = ProviderRecorder()
         let service = FoundationModelsService(
             privateCloudFeatureEnabled: true,
             privateCloudAvailable: true
-        ) { _, provider in
+        ) { _, provider, _ in
             await recorder.record(provider)
             throw FoundationModelsError.generationFailed
         }
@@ -224,7 +344,7 @@ struct FoundationModelsServiceTests {
         let service = FoundationModelsService(
             privateCloudFeatureEnabled: true,
             privateCloudAvailable: true
-        ) { _, provider in
+        ) { _, provider, _ in
             await recorder.record(provider)
             if provider == .privateCloudCompute {
                 throw FoundationModelsError.privateCloudNetworkFailure
@@ -247,7 +367,7 @@ struct FoundationModelsServiceTests {
         let service = FoundationModelsService(
             privateCloudFeatureEnabled: false,
             privateCloudAvailable: true
-        ) { _, provider in
+        ) { _, provider, _ in
             await recorder.record(provider)
             return "local result"
         }
@@ -268,6 +388,7 @@ struct FoundationModelsServiceTests {
         punctuation: Bool = false,
         grammar: Bool = false,
         programming: Bool = false,
+        additionalInstructions: String = "",
         customWords: [String] = []
     ) -> TranscriptProcessingOptions {
         TranscriptProcessingOptions(
@@ -276,6 +397,7 @@ struct FoundationModelsServiceTests {
             punctuationRestorationEnabled: punctuation,
             grammarCorrectionEnabled: grammar,
             programmingDirectivesEnabled: programming,
+            additionalSystemInstructions: additionalInstructions,
             customWords: customWords
         )
     }
@@ -290,5 +412,21 @@ private actor ProviderRecorder {
 
     func recordedProviders() -> [TranscriptModelProvider] {
         providers
+    }
+}
+
+private actor InstructionRecorder {
+    private var values: [(TranscriptModelProvider, String)] = []
+
+    func record(provider: TranscriptModelProvider, instructions: String) {
+        values.append((provider, instructions))
+    }
+
+    func providers() -> [TranscriptModelProvider] {
+        values.map(\.0)
+    }
+
+    func instructions() -> [String] {
+        values.map(\.1)
     }
 }

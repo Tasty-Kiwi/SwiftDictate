@@ -6,13 +6,19 @@ struct TranscriptProcessingOptions: Equatable, Sendable {
     let punctuationRestorationEnabled: Bool
     let grammarCorrectionEnabled: Bool
     let programmingDirectivesEnabled: Bool
+    let additionalSystemInstructions: String
     let customWords: [String]
+
+    var normalizedAdditionalSystemInstructions: String {
+        additionalSystemInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var requiresModelProcessing: Bool {
         foundationModelsEnabled && (
             smartCleanupEnabled
                 || punctuationRestorationEnabled
                 || grammarCorrectionEnabled
+                || !normalizedAdditionalSystemInstructions.isEmpty
                 || !customWords.isEmpty
         )
     }

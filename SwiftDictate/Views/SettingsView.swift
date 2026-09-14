@@ -157,6 +157,25 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                TextEditor(text: additionalSystemInstructionsBinding)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(minHeight: 90)
+
+                HStack {
+                    Spacer()
+
+                    Button("Clear") {
+                        appState.settings.additionalSystemInstructions = ""
+                    }
+                    .disabled(appState.settings.additionalSystemInstructions.isEmpty)
+                }
+            } header: {
+                Text("Additional Model Instructions")
+            } footer: {
+                Text("These instructions extend SwiftDictate’s built-in safeguards and apply only when Foundation Models processing is active. They can be configured even when Apple Intelligence is currently unavailable.")
+            }
+
             if FeatureFlags.privateCloudCompute {
                 Section("Private Cloud Compute") {
                     Toggle(
@@ -310,6 +329,13 @@ struct SettingsView: View {
         Binding(
             get: { appState.settings.enableProgrammingDirectives },
             set: { appState.settings.enableProgrammingDirectives = $0 }
+        )
+    }
+
+    private var additionalSystemInstructionsBinding: Binding<String> {
+        Binding(
+            get: { appState.settings.additionalSystemInstructions },
+            set: { appState.settings.additionalSystemInstructions = $0 }
         )
     }
 
