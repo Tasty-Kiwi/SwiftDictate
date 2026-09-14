@@ -32,22 +32,23 @@ jobs:
       - name: Build (Release)
         run: |
           set -o pipefail
-          BUILD_CMD="xcodebuild -project SwiftDictate.xcodeproj -scheme SwiftDictate -configuration Release -destination 'platform=macOS,arch=arm64' CODE_SIGN_IDENTITY='-' build"
-          if command -v xcbeautify >/dev/null 2>&1; then
-            $BUILD_CMD | xcbeautify --renderer github-actions
-          else
-            $BUILD_CMD
-          fi
+          xcodebuild -project SwiftDictate.xcodeproj \
+            -scheme SwiftDictate \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            CODE_SIGN_IDENTITY='-' \
+            build | xcbeautify --renderer github-actions
 
       - name: Run Tests (Debug)
         run: |
           set -o pipefail
-          TEST_CMD="xcodebuild -project SwiftDictate.xcodeproj -scheme SwiftDictate -configuration Debug -destination 'platform=macOS,arch=arm64' -resultBundlePath TestResults.xcresult CODE_SIGN_IDENTITY='-' test"
-          if command -v xcbeautify >/dev/null 2>&1; then
-            $TEST_CMD | xcbeautify --renderer github-actions
-          else
-            $TEST_CMD
-          fi
+          xcodebuild -project SwiftDictate.xcodeproj \
+            -scheme SwiftDictate \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGN_IDENTITY='-' \
+            test | xcbeautify --renderer github-actions
 
       - name: Upload Test Results
         if: failure()
