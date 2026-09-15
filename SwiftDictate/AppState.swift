@@ -10,6 +10,7 @@ final class AppState {
     var finalizedTranscript: String = ""
     var recordingTriggeredByHotkey = false
     var recordingStartedAt: Date?
+    var selectedSettingsTab: SettingsTab = .general
 
     let permissionsService = PermissionsService()
     let audioCaptureService = AudioCaptureService()
@@ -17,7 +18,8 @@ final class AppState {
     let foundationModelsService = FoundationModelsService()
     let textInsertionService = TextInsertionService()
     let hotkeyService = HotkeyService()
-    let settings = AppSettings()
+    let settings: AppSettings
+    let transcriptHistoryStore: TranscriptHistoryStore
     private let windowController = AppWindowController()
 
     private var recordingTask: Task<Void, Never>?
@@ -27,9 +29,17 @@ final class AppState {
     private var setupTask: Task<Void, Never>?
     private var insertionTargetApplication: NSRunningApplication?
     private var recordingSessionID = UUID()
+    private var archivedRecordingSessionID: UUID?
     private var hasCapturedAudio = false
 
-    init() {
+    init(
+        settings: AppSettings = AppSettings(),
+        transcriptHistoryStore: TranscriptHistoryStore = TranscriptHistoryStore()
+    ) {
+        self.settings = settings
+        self.transcriptHistoryStore = transcriptHistoryStore
+        transcriptHistoryStore.applyRetentionLimit(settings.transcriptHistoryLimit)
+
         Task {
             await initialize()
         }
@@ -257,6 +267,8 @@ final class AppState {
         let shouldFinalizeResults = hasCapturedAudio
         let processingOptions = settings.transcriptProcessingOptions
         let providerPreference = settings.intelligenceProviderPreference
+        let localeIdentifier = settings.preferredLocaleIdentifier
+        let recordingDuration = max(0, Date().timeIntervalSince(recordingStartedAt ?? .now))
 
         recordingState = .processing
         recordingStartedAt = nil
@@ -302,6 +314,12 @@ final class AppState {
                 providerPreference: providerPreference
             )
             guard recordingSessionID == sessionID else { return }
+
+            archiveCompletedTranscript(
+                transcriptForInsertion,
+                localeIdentifier: localeIdentifier,
+                duration: recordingDuration
+            )
 
             if settings.autoInsertText, !transcriptForInsertion.isEmpty {
                 do {
@@ -396,6 +414,39 @@ final class AppState {
         finalizedTranscript = ""
     }
 
+    @discardableResult
+    func archiveCompletedTranscript(
+        _ text: String,
+        completedAt: Date = .now,
+        localeIdentifier: String? = nil,
+        duration: TimeInterval
+    ) -> Bool {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        guard archivedRecordingSessionID != recordingSessionID else { return false }
+
+        let record = TranscriptRecord(
+            text: text,
+            completedAt: completedAt,
+            localeIdentifier: localeIdentifier ?? settings.preferredLocaleIdentifier,
+            recordingDuration: max(0, duration)
+        )
+        let didArchive = transcriptHistoryStore.add(
+            record,
+            retentionLimit: settings.transcriptHistoryLimit
+        )
+        if didArchive {
+            archivedRecordingSessionID = recordingSessionID
+        }
+        return didArchive
+    }
+
+    func updateTranscriptHistoryLimit(_ retentionLimit: TranscriptRetentionLimit) {
+        settings.transcriptHistoryLimit = retentionLimit
+        transcriptHistoryStore.applyRetentionLimit(retentionLimit)
+    }
+
     func handleError(_ error: Error) {
         recordingState = .error(error)
         dismissOverlay()
@@ -459,6 +510,12 @@ final class AppState {
     }
 
     func showSettings() {
+        selectedSettingsTab = .general
+        windowController.showSettings(for: self)
+    }
+
+    func showTranscripts() {
+        selectedSettingsTab = .transcripts
         windowController.showSettings(for: self)
     }
 }

@@ -25,4 +25,16 @@ struct AppWindowControllerTests {
         #expect(reopenedWindow !== firstWindow)
         reopenedWindow.close()
     }
+
+    @Test func transcriptActionOpensTheSettingsWindowOnTheTranscriptTab() throws {
+        let appState = AppState()
+
+        appState.showTranscripts()
+        let settingsWindow = try #require(
+            NSApp.windows.first { $0.title == "SwiftDictate Settings" && $0.isVisible }
+        )
+
+        #expect(appState.selectedSettingsTab == .transcripts)
+        settingsWindow.close()
+    }
 }

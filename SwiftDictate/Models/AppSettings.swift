@@ -40,6 +40,9 @@ final class AppSettings {
     var customWords: [String] {
         didSet { defaults.set(customWords, forKey: Keys.customWords) }
     }
+    var transcriptHistoryLimitRaw: Int {
+        didSet { defaults.set(transcriptHistoryLimitRaw, forKey: Keys.transcriptHistoryLimit) }
+    }
 
     var recordingMode: RecordingMode {
         get { RecordingMode(rawValue: recordingModeRaw) ?? .toggle }
@@ -48,6 +51,11 @@ final class AppSettings {
 
     var preferredLocale: Locale {
         Locale(identifier: preferredLocaleIdentifier)
+    }
+
+    var transcriptHistoryLimit: TranscriptRetentionLimit {
+        get { TranscriptRetentionLimit(rawValue: transcriptHistoryLimitRaw) ?? .forever }
+        set { transcriptHistoryLimitRaw = newValue.rawValue }
     }
 
     var intelligenceProviderPreference: IntelligenceProviderPreference {
@@ -97,6 +105,8 @@ final class AppSettings {
         self.customWords = Self.normalizedCustomWords(
             defaults.stringArray(forKey: Keys.customWords) ?? []
         )
+        self.transcriptHistoryLimitRaw = defaults.object(forKey: Keys.transcriptHistoryLimit)
+            as? Int ?? Defaults.transcriptHistoryLimitRaw
     }
 
     @discardableResult
@@ -128,6 +138,7 @@ final class AppSettings {
         static let restoreClipboardAfterPaste = "clearClipboardAfterPaste"
         static let preferredLocaleIdentifier = "preferredLocaleIdentifier"
         static let customWords = "customWords"
+        static let transcriptHistoryLimit = "transcriptHistoryLimit"
     }
 
     private enum Defaults {
@@ -141,6 +152,7 @@ final class AppSettings {
         static let additionalSystemInstructions = ""
         static let autoInsertText = true
         static let restoreClipboardAfterPaste = true
+        static let transcriptHistoryLimitRaw = TranscriptRetentionLimit.forever.rawValue
 
         static func preferredLocaleIdentifier(for locale: Locale) -> String {
             locale.identifier(.bcp47)
@@ -160,6 +172,7 @@ final class AppSettings {
                 Keys.restoreClipboardAfterPaste: restoreClipboardAfterPaste,
                 Keys.preferredLocaleIdentifier: preferredLocaleIdentifier(for: locale),
                 Keys.customWords: [String](),
+                Keys.transcriptHistoryLimit: transcriptHistoryLimitRaw,
             ]
         }
     }

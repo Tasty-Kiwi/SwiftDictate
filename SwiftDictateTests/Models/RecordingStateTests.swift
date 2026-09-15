@@ -11,7 +11,7 @@ struct RecordingStateTests {
         #expect(RecordingState.error(TestError()).menuBarActivity == .none)
     }
 
-    @Test func menuBarActivityUsesFilledMicrophoneForActiveStates() {
+    @Test func menuBarActivityUsesAnOutlineAtIdleAndFilledColoredActiveStates() {
         #expect(MenuBarActivity.none.microphoneSymbolName == "mic")
         #expect(MenuBarActivity.recording.microphoneSymbolName == "mic.fill")
         #expect(MenuBarActivity.processing.microphoneSymbolName == "mic.fill")

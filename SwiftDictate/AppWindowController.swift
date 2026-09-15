@@ -69,10 +69,10 @@ final class AppWindowController: NSObject, NSWindowDelegate {
             return
         }
 
-        let contentSize = NSSize(width: 500, height: 450)
+        let contentSize = NSSize(width: 820, height: 560)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -81,6 +81,7 @@ final class AppWindowController: NSObject, NSWindowDelegate {
         )
         window.contentViewController = viewController
         window.title = "SwiftDictate Settings"
+        window.minSize = NSSize(width: 720, height: 500)
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()

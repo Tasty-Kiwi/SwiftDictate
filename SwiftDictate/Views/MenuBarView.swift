@@ -139,6 +139,7 @@ struct MenuBarView: View {
 
             Spacer()
 
+            transcriptsButton
             settingsButton
         }
     }
@@ -174,13 +175,20 @@ struct MenuBarView: View {
         .help("Open Settings")
     }
 
+    private var transcriptsButton: some View {
+        Button(action: { appState.showTranscripts() }) {
+            Label("Transcripts", systemImage: "doc.text")
+        }
+        .labelStyle(.iconOnly)
+        .help("Open Transcripts in Settings")
+    }
+
     private var statusColor: Color {
         switch appState.recordingState {
         case .idle: .gray
         case .requestingPermissions: .yellow
         case .ready: .green
-        case .recording: .red
-        case .processing: .orange
+        case .recording, .processing: appState.recordingState.menuBarActivity.tint.color
         case .error: .red
         }
     }

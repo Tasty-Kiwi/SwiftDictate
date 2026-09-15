@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppState.self) private var appState
     @State private var newCustomWord = ""
-    @State private var selectedTab = SettingsTab.general
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,14 +13,14 @@ struct SettingsView: View {
             selectedTabContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 500, height: 450)
+        .frame(minWidth: 720, idealWidth: 820, minHeight: 500, idealHeight: 560)
     }
 
     private var settingsToolbar: some View {
         HStack(spacing: 2) {
             ForEach(SettingsTab.allCases) { tab in
                 Button {
-                    selectedTab = tab
+                    appState.selectedSettingsTab = tab
                 } label: {
                     VStack(spacing: 5) {
                         Image(systemName: tab.systemImage)
@@ -31,10 +30,10 @@ struct SettingsView: View {
                         Text(tab.title)
                             .font(.system(size: 13, weight: .medium))
                     }
-                    .foregroundStyle(selectedTab == tab ? Color.accentColor : .secondary)
+                    .foregroundStyle(appState.selectedSettingsTab == tab ? Color.accentColor : .secondary)
                     .frame(width: 88, height: 68)
                     .background {
-                        if selectedTab == tab {
+                        if appState.selectedSettingsTab == tab {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(Color.primary.opacity(0.10))
                                 .overlay {
@@ -47,7 +46,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .help(tab.title)
-                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
+                .accessibilityAddTraits(appState.selectedSettingsTab == tab ? .isSelected : [])
             }
         }
         .padding(.horizontal, 20)
@@ -58,11 +57,12 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var selectedTabContent: some View {
-        switch selectedTab {
+        switch appState.selectedSettingsTab {
         case .general: generalSettings
         case .recording: recordingSettings
         case .processing: processingSettings
         case .dictionary: dictionarySettings
+        case .transcripts: TranscriptHistoryView()
         case .about: aboutTab
         }
     }
@@ -97,6 +97,7 @@ struct SettingsView: View {
                     }
                 }
             }
+
         }
         .formStyle(.grouped)
     }
@@ -391,11 +392,12 @@ struct SettingsView: View {
     }
 }
 
-private enum SettingsTab: String, CaseIterable, Identifiable {
+enum SettingsTab: String, CaseIterable, Identifiable {
     case general
     case recording
     case processing
     case dictionary
+    case transcripts
     case about
 
     var id: Self { self }
@@ -406,6 +408,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .recording: "Recording"
         case .processing: "Processing"
         case .dictionary: "Dictionary"
+        case .transcripts: "Transcripts"
         case .about: "About"
         }
     }
@@ -416,6 +419,7 @@ private enum SettingsTab: String, CaseIterable, Identifiable {
         case .recording: "mic"
         case .processing: "brain"
         case .dictionary: "text.book.closed"
+        case .transcripts: "doc.text"
         case .about: "info.circle"
         }
     }

@@ -26,6 +26,7 @@ struct AppSettingsTests {
         #expect(settings.restoreClipboardAfterPaste)
         #expect(settings.preferredLocale.identifier(.bcp47) == "en-GB")
         #expect(settings.customWords.isEmpty)
+        #expect(settings.transcriptHistoryLimit == .forever)
     }
 
     @Test func recordingModeAndOptionsPersistInTheInjectedStore() {
@@ -39,6 +40,7 @@ struct AppSettingsTests {
         settings.usePrivateCloudCompute = true
         settings.additionalSystemInstructions = "Prefer concise sentences.\nKeep API names unchanged."
         settings.preferredLocaleIdentifier = "lt-LT"
+        settings.transcriptHistoryLimit = .fiveHundred
         #expect(settings.addCustomWord("  Axiomorix  "))
         #expect(settings.addCustomWord("Foundation Models"))
 
@@ -52,6 +54,7 @@ struct AppSettingsTests {
         #expect(reloaded.intelligenceProviderPreference == .onDevice)
         #expect(reloaded.preferredLocale.identifier(.bcp47) == "lt-LT")
         #expect(reloaded.customWords == ["Axiomorix", "Foundation Models"])
+        #expect(reloaded.transcriptHistoryLimit == .fiveHundred)
     }
 
     @Test func privateCloudFeatureIsDisabledForStandardBuilds() {
@@ -106,6 +109,14 @@ struct AppSettingsTests {
 
         let settings = AppSettings(defaults: defaults)
         #expect(settings.recordingMode == .toggle)
+    }
+
+    @Test func invalidPersistedTranscriptHistoryLimitFallsBackToForever() {
+        let defaults = makeDefaults()
+        defaults.set(42, forKey: "transcriptHistoryLimit")
+
+        let settings = AppSettings(defaults: defaults)
+        #expect(settings.transcriptHistoryLimit == .forever)
     }
 
     @Test func customWordsAreNormalizedDeduplicatedAndRemovable() {
