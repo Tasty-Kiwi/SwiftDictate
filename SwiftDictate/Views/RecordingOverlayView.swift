@@ -55,20 +55,21 @@ struct RecordingOverlayView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                     }
-                    .onChange(of: appState.volatileTranscript) { _, _ in
-                        withAnimation {
-                            scrollProxy.scrollTo("volatile", anchor: .bottom)
-                        }
+                    .task(id: appState.volatileTranscript) {
+                        guard !appState.volatileTranscript.isEmpty else { return }
+                        await Task.yield()
+                        scrollProxy.scrollTo("volatile", anchor: .bottom)
                     }
                 }
             } else {
                 Text("Listening...")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity)
                     .padding(12)
             }
         }
-        .frame(width: 320, height: 200)
+        .frame(width: 320, height: 200, alignment: .top)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.15), radius: 12, y: 4)

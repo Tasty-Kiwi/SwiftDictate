@@ -116,10 +116,10 @@ struct MenuBarView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 120)
-                .onChange(of: appState.volatileTranscript) {
-                    withAnimation {
-                        proxy.scrollTo("volatileEnd", anchor: .bottom)
-                    }
+                .task(id: appState.volatileTranscript) {
+                    guard !appState.volatileTranscript.isEmpty else { return }
+                    await Task.yield()
+                    proxy.scrollTo("volatileEnd", anchor: .bottom)
                 }
             }
         }
