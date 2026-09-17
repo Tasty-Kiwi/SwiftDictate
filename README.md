@@ -80,7 +80,7 @@ SwiftDictateApp (@main, MenuBarExtra)
 
 ## Usage Guide
 
-1. **Start Dictating**: Press the configured hotkey (e.g. Fn / Globe or custom shortcut) to begin recording audio.
+1. **Start Dictating**: Press the configured hotkey (default: **Right Option** or your custom shortcut) to begin recording audio.
 2. **Visual Indicator**: The menu bar icon changes state to reflect audio capture and processing. An optional overlay view shows real-time live transcription.
 3. **Automatic Insertion**: Once recording finishes, the transcript is processed with enabled Apple Intelligence rules and pasted into your active cursor position.
 4. **Settings & Customization**: Click the menu bar icon to access Settings:
